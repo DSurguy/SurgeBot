@@ -1,5 +1,5 @@
 {
-  "name": "WoWIRCBot",
+  "name": "SurgeBot",
   "version": "0.0.1",
   "description": "Fork of DSurguy/WoWIRCBot. A fun bot for IRC channels I frequent.",
   "main": "bot/index.js",
@@ -23,5 +23,9 @@
   },
   "dependencies": {
     "irc": "~0.3.6"
+  },
+  "devDependencies": {
+    "mongodb": "^2.0.30",
+    "q": "^1.3.0"
   }
 }

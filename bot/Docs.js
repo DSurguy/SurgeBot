@@ -17,7 +17,7 @@ var Articles = {
 
     //WoWIRCBot command documentation
     Commands: {
-        wowis: [
+        /*wowis: [
             "\x0311"+"Syntax: !wowis <Character> [<Realm>] [<Region>]",
             "This command will generate a link to the official Battle.net armory page for the requested character.",
             "The realm and region are optional, they will default to the following: ",
@@ -38,7 +38,7 @@ var Articles = {
         wowhead: [
             "\x0311"+"Syntax: !wowhead <Search>",
             "This command will generate a link to a wowhead search for the provided terms.",
-            "\x0315"+"Whisper this command to the bot for a private response!"]
+            "\x0315"+"Whisper this command to the bot for a private response!"]*/
     },
 
     //Error report stating help command was not recognized

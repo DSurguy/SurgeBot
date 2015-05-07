@@ -2,7 +2,9 @@ var irc = require('irc'),
 	https = require('https'),
 	config = require('./config.js'),
 	fs = require('fs'),
-    Docs = require('./Docs.js');
+    Docs = require('./Docs.js'),
+    Q = require('q'),
+    Mongo = require('mongodb');
 
 module.exports = SurgeBot;
 
@@ -77,7 +79,6 @@ function SurgeBot(){
 		bot.log("Connection to IRC server successful. Listening for messages.", 1);
 	});
 }
-
 
 /**
 * FLOOD PREVENTION
@@ -237,324 +238,77 @@ SurgeBot.prototype.routeHelp = function(requestedArticle){
     return Docs.Error(requestedArticle);
 };
 
-// !wowis <character> [<realm>] [<region>]
-SurgeBot.prototype.wowis = function(from, target, params){
+//!roll 
+SurgeBot.prototype.roll = function(from, to, params){
 	var bot = this,
-		args = params.split(" "),
-		region, character, realm;
+		argArray = params.split(" "),
+		target = to;
 
-	if( args[0].length == 0 ){
-		//this is a malformed request, alert the sender
-		bot.client.notice(from, "Malformed !wowis. Expected !wowis <characterName> [<serverName>] [<region>], got !wowis <"+args[0]+"> [<"+args[1]+">] [<"+args[2]+">]. See '!help wowis' for more information.");
-		return false;
-	}
-	else{
-		//this is a proper request, add the character name
-		character = args[0];
-	}
+	var args = {
+		die: parseInt(argArray[0]? argArray[0] : ""),
+		min: parseInt(argArray[0]? argArray[0] : ""),
+		max: parseInt(argArray[1]? argArray[1] : ""),
+		mult: (function (multArgs){
+			for( var i=1; i<multArgs.length; i++ ){
+				if( multArgs[i] == "-m" && multArgs[i+1] ){
+					return parseInt(multArgs[i+1]);
+				}
+				else if( multArgs[i] == "-m" ){
+					return NaN;
+				}
+			}
+			return undefined;
+		})(argArray)
+	};
 
-	if( args[1] ){
-		//the server name has been passed in, use it
-		realm = args[1]
-	}
-	else if( config.wow.homeRealm ){
-		//use the home server
-		realm = config.wow.homeRealm;
-	}
-	else{
-		//we don't have a server to use!
-		bot.client.notice(from, "Unable to complete !wowis. No realm specified in request or in bot config. Please contact channel admin or supply a realm. See '!help wowis' for more information.");
-		return false;
-	}
-
-
-	if( args[2] ){
-		//the server region was passed in
-		region = args[2]
-	}
-	else if( config.wow.homeRegion ){
-		//use the home region
-		region = config.wow.homeRegion;
-	}
-	else{
-		//we don't have a region to use!
-		bot.client.notice(from, "Unable to complete !wowis. No region specified in request or in bot config. Please contact channel admin or supply a realm. See '!help wowis' for more information.");
-		return false;
-	}	
-	
-	//check to see if this character exists
-	bot.getCharacter(realm, character, region, function(charExists){
-		if( charExists ){
-			//send the link to the target of the request
-			bot.client.say(target, "\x0314"+"!wowis for "+args[0]+": http://"+region+".battle.net/wow/en/character/"+realm+"/"+character+"/advanced");
+	if( argArray.length == 4 ){
+		//assume !roll min max -m mult
+		if( isNaN(args.min) || isNaN(args.max) || isNaN(args.mult) ){
+			bot.client.say(to, 'Malformed !roll.');
+				//+'Expected !roll <die/min> [<max>] [-m <multiplier>], got !wowis <'+argArray[0]+'> [<'+argArray[1]+'>] [<'+argArray[2]+'>]. See \'!help wowis\'' for more information.'
 		}
 		else{
-			//send a message that the char doesn't exist to the target of the request
-			bot.client.say(target, "\x0314"+"!wowis for <"+args[0]+"> [<"+args[1]+">] [<"+args[2]+">]: Character not found!");	
+			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min)*args.mult);
 		}
-	});
-};
-
-// !amr <character> [<realm>] [<region>]
-SurgeBot.prototype.amr = function(from, target, params){
-	var bot = this,
-		args = params.split(" "),
-		region, character, realm;
-
-	if( args[0].length == 0 ){
-		//this is a malformed request, alert the sender
-		bot.client.notice(from, "Malformed !amr. Expected !amr <character> [<realm>] [<region>], got !amr <"+args[0]+"> [<"+args[1]+">] [<"+args[2]+">]. See '!help amr' for more information.");
-		return false;
 	}
-	else{
-		character = args[0];
-	}
-
-	if( args[1] ){
-		realm = args[1];
-		
-	}
-	else if( config.wow.homeRealm) {
-		realm = config.wow.homeRealm;
-	}
-	else{
-		bot.client.notice(from, "Unable to complete !amr. No realm specified in request or in bot config. Please contact channel admin or supply a realm. See '!help amr' for more information.");
-	}
-
-	if( args[2] ){
-		region = bot.amr_Region(args[2]);
-	}
-	else if( config.wow.homeRegion) {
-		region = bot.amr_Region(config.wow.homeRegion);
-	}
-	else{
-		bot.client.notice(from, "Unable to complete !amr. No region specified in request or in bot config. Please contact channel admin or supply a region. See '!help amr' for more information.");
-	}
-
-	//check to see if this character exists
-	bot.getCharacter(realm, character, region, function(charExists){
-		if( charExists ){
-			//send the link to the target of the request
-			bot.client.say(target, "\x0314"+"!amr for "+args[0]+": http://www.askmrrobot.com/wow/player/"+region+"/"+realm+"/"+character);
+	else if( argArray.length == 3 ){
+		//assume !roll die -m mult
+		if( isNaN(args.die) || isNaN(args.mult) ){
+			bot.client.say(to, 'Malformed !roll.');
 		}
 		else{
-			//send a message that the char doesn't exist to the target of the request
-			bot.client.say(target, "\x0314"+"!amr for <"+args[0]+"> [<"+args[1]+">] [<"+args[2]+">]: Character not found!");	
+			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1)*args.mult);
 		}
-	});
-};
-SurgeBot.prototype.amr_Region = function(region){
-	switch(region){
-		case "us":
-		case "usa":
-		default:
-			return "us";
-			break;
-		case "eu":
-			return "eu";
-			break;
 	}
-};
-
-//!wowhead <search>
-SurgeBot.prototype.wowhead = function(from, target, params){
-
-	var bot = this,
-		args = params,
-		url = "http://www.wowhead.com/search?q="
-
-	//allow ( [a-zA-Z0-9] | [/] AS %2F | [-_'"] | [+] AS %2B | [\s] as + )
-
-	var slashExp = /\//g,
-		plusExp = /\+/g,
-		spaceExp = /\s/g,
-		cleanSearch = "";
-
-	cleanSearch = args;
-
-	cleanSearch = cleanSearch
-		.replace(slashExp, "%2f")
-		.replace(plusExp, "%2B")
-		.replace(spaceExp, "+");
-
-	url += cleanSearch;
-
-	bot.client.say(target, url);
-
-};
-
-//!realm <realm> <region>
-SurgeBot.prototype.realm = function(from, target, params){
-	var bot = this,
-		args = params.split(" "),
-		region, realm, url;
-
-	if( args[0] ){
-		realm = args[0];
+	else if( argArray.length == 2 ){
+		//assume !roll min max
+		if( isNaN(args.min) || isNaN(args.max) ){
+			bot.client.say(to, 'Malformed !roll.');
+		}
+		else{
+			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min) );
+		}
 	}
-	else if( config.wow.homeRealm ){
-		//use the home server
-		realm = config.wow.homeRealm;
+	else if( argArray.length == 1 ){
+		//assume !roll die
+		if( isNaN(args.die) ){
+			bot.client.say(to, 'Malformed !roll.');
+		}
+		else{
+			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1) );
+		}
 	}
 	else{
-		//we don't have a server to use!
-		bot.client.notice(from, "Unable to complete !wowis. No realm specified in request or in bot config. Please contact channel admin or supply a realm. See '!help wowis' for more information.");
-		return false;
+		bot.client.say(to, 'Malformed !roll.');
 	}
-
-	if( args[1] ){
-		region = args[1];
-	}
-	else if( config.wow.homeRegion ){
-		//use the home region
-		region = config.wow.homeRegion;
-	}
-	else{
-		//we don't have a region to use!
-		bot.client.notice(from, "Unable to complete !wowis. No region specified in request or in bot config. Please contact channel admin or supply a realm. See '!help wowis' for more information.");
-		return false;
-	}
-
-	bot.getRealm(realm, region, function(realmData){
-		var status = realmData.status ? "\x0303Up" : "\x04Down",
-			queue = !realmData.queue ? "\x0303No" : "\x04Yes",
-			population;
-
-		//parse the population
-		switch(realmData.population){
-			case "low": population = "\x0308Low"; break;
-			case "medium": population = "\x0307Medium"; break;
-			case "high": population = "\x0304High"; break;
-			default: population = "\x0314Unknown"; break;
-		}
-		//spit out the status, WITH COLORS!
-		bot.client.say(target, "\x0310Realm: \x0306"+realm+"\x0310   Region: \x0306"+region);
-		bot.client.say(target, "\x0310Status: "+status+"\x0310   LoginQueue: "+queue+"\x0310   Population: "+population);
-	}, function(err){
-		bot.client.notice(from, err);
-	});
 
 };
-
-SurgeBot.prototype.getCharacter = function(realm, character, region, callback){
-	//build the request string
-	var url = this.buildApiUrl({
-		region: region,
-		path: "/character/",
-		params: [realm, character]
-	}),
-		bot = this;
-
-	//make a get request to see if we can nab some data
-	https.get(url, function(result){
-		var newChar,
-			data = "";
-		result.on("data", function(chunk){
-			data += chunk;
-		});
-		result.on("end", function(){
-			newChar = JSON.parse(data);
-			if( newChar.status === "nok" ){
-				//this character does NOT exists
-				callback(undefined);
-			}
-			else{
-				callback(newChar);
-			}
-		});
-	}).on('error', function(e){
-		console.error("Unable to retrieve character from API. e: "+e.message);
-	});
-};
-
-SurgeBot.prototype.getRealm = function(realm, region, callback, error){
-	var bot = this,
-	//build the realm url
-	url = this.buildApiUrl({
-		region: "us",
-		path: "/realm/",
-		params: ["status"],
-		addFields: ["realms="+realm]
-	});
-
-	//grab the realm data
-	https.get(url, function(result){
-		var data = "",
-			realmData;
-		result.on("data", function(chunk){
-			data += chunk;
-		});
-		result.on("end", function(){
-			//grab the first realm from the results
-			realmData = JSON.parse(data).realms[0];
-			//see if this realm matches what we're actually looking for
-			if( realmData.slug !== realm.toLowerCase() ){
-				error("Unable to get realm status, realm not found. Try replacing spaces with -, or check the realm list at http://"+bot.db_region(region)+".battle.net/wow/en/status");
-			}
-			else{
-				//return the realm
-				callback(realmData);
-			}
-			
-		});
-	}).on('error', function(e){
-		console.error("Unable to retrieve realm status. e: "+e.message);
-		bot.error("Unable to get realm status, realm not found. Try replacing spaces with -, or check the realm list at http://"+bot.db_region(region)+".battle.net/wow/en/status");
-	});
-};
-
-SurgeBot.prototype.db_region = function(region){
-	switch(region){
-		case "us":
-		case "usa":
-		default:
-			return "us";
-		case "eu":
-			return "eu";
-	}
-};
-
-SurgeBot.prototype.buildApiUrl = function(args){
-	var bot = this;
-
-	try{
-		var url = ["https://"+this.db_region(args.region)+".api.battle.net/wow"];
-
-		url.push( args.path ); // should be /thing/otherthing/
-
-		if( args.params ){
-			url.push( args.params.join("/") );
-		}
-
-		url.push( "?" );
-
-		if( args.addFields ){
-			url.push( args.addFields.join("&") );
-		}
-
-		url.push( "&locale="+config.api.locale );
-
-		if( config.api.key ){
-			url.push( "&apikey="+config.api.key )
-		}
-
-		return url.join("");
-
-	} catch(e){
-		bot.error("Unable to build api url. e: "+e.message);
-	}
-};
-
 /*
 *	Enable/Disable commands
 */
 
 SurgeBot.prototype.commands = {
-	wowis: true,
-	amr: true,
-    help: true,
-    realm: true,
-    wowhead: true
+	roll: true
 };
 
 /*

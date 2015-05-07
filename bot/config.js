@@ -3,7 +3,7 @@ var secret,
 
 //attempt to include the secret data file
 try{
-    secret = require("./secret.js");
+    secret = require('./secret.js');
 } catch (e){
     secret = {};
 }
@@ -44,33 +44,29 @@ else{
     }
 }
 
-
 /**
-* WOW DATA CONFIG
+* MONGO CONFIG
 **/
-if( secret.wow ){
-    //pull from secret data and fallback to defaults
-    config.wow = {
-        homeRealm: secret.wow.homeRealm ? secret.wow.homeRealm : 'Draenor',
-        homeRegion: secret.wow.homeRegion ? secret.wow.homeRegion : 'us'
+if( secret.mongo ){
+    config.mongo = {
+        user: secret.mongo.user ? secret.mongo.user : 'noUser',
+        pass: secret.mongo.pass ? secret.mongo.pass : 'noPass',
+        url: secret.mongo.url ? secret.mongo.url : 'noUrl'
     };
 }
 else{
-    //use defaults
-    config.wow = {
-        homeRealm: 'Draenor',
-        homeRegion: 'us'
-    };
+    //Don't initialize DB
+    config.mongo = undefined;
 }
 
 /**
 *   ADMIN LIST CONFIG
 **/
 if( secret.adminList ){
-    config.adminList = secret.adminList ? secret.adminList : undefined;
+    config.adminList = secret.adminList ? secret.adminList : {};
 }
 else{
-    config.adminList = undefined;
+    config.adminList = {};
 }
 
 /**
