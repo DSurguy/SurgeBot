@@ -1,0 +1,27 @@
+{
+  "name": "WoWIRCBot",
+  "version": "0.0.1",
+  "description": "Fork of DSurguy/WoWIRCBot. A fun bot for IRC channels I frequent.",
+  "main": "bot/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node bot/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DSurguy/SurgeBot.git"
+  },
+  "keywords": [
+    "IRC",
+    "Bot",
+    "Node"
+  ],
+  "author": "Surguy.Derek@gmail.com",
+  "license": "BSD",
+  "bugs": {
+    "url": "https://github.com/DSurguy/SurgeBot/issues"
+  },
+  "dependencies": {
+    "irc": "~0.3.6"
+  }
+}
