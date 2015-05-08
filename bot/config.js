@@ -9,19 +9,15 @@ try{
 }
 
 /**
-* API CONFIG
+* Google API CONFIG
 **/
-if( secret.api ){
-    config.api = {
-        key: secret.api.key ? secret.api.key : undefined,
-        locale: secret.api.locale ? secret.api.locale : "en_US"
+if( secret.googleApi ){
+    config.googleApi = {
+        key: secret.googleApi.key ? secret.googleApi.key : ''
     };
 }
 else{
-    config.api = {
-        key: undefined,
-        locale: "en_US"
-    };
+    config.googleApi = undefined;
 }
 
 /**

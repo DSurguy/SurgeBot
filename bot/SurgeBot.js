@@ -63,9 +63,12 @@ function SurgeBot(){
 		    	//check to see if we're handling the command
 		    	if( bot.commands[command] ){
 		    		//this is a command we can handle, parse it!
-		    		bot.parseMessage(from, to, command, message.slice(cmdEnd+1) );
+		    		bot.parseCommand(from, to, command, message.slice(cmdEnd+1) );
 		    	}
 		    }
+	    }
+	    else{
+	    	bot.parseMessage(from, to, message);
 	    }
 	});
 
@@ -184,7 +187,7 @@ SurgeBot.prototype.checkFlood = function(host){
 *	Message parsing
 **/
 
-SurgeBot.prototype.parseMessage = function(from, to, command, params){
+SurgeBot.prototype.parseCommand = function(from, to, command, params){
 	//determine who we need to send this message to
 	var target = "";
 	if( to[0] === "#" || to[0] === "&" ){
@@ -198,11 +201,63 @@ SurgeBot.prototype.parseMessage = function(from, to, command, params){
 	//now actually process the command
 	this[command](from, target, params);
 };
+SurgeBot.prototype.messageHandlers = [
+	{
+		handler: 'm_youtube',
+		regex: /youtube\.com\/watch\?v=[A-Za-z0-9_\-]+(\s|$)/
+	}
+];
+SurgeBot.prototype.parseMessage = function(from, to, message){
+	var bot = this;
+	for( var i=0; i<bot.messageHandlers.length; i++ ){
+		if( message.search(bot.messageHandlers[i].regex) !== -1 ){
+			bot.log('Handling Message: '+bot.messageHandlers[i].handler, 2);
+			bot[bot.messageHandlers[i].handler](from, to, message);
+			break;
+		}
+	}
+};
+
+/**
+*	MESSAGE HANDLERS
+**/
+SurgeBot.prototype.m_youtube = function(from, to, message){
+	var bot = this;
+
+	var msgString = message,
+		videoIDs = [];
+	//gather all the video IDs
+	while( msgString.search(/youtube\.com\/watch\?v=[A-Za-z0-9_\-]+(\s|$)/) !== -1 ){
+	    var splitMsg = msgString.substr(msgString.search(/youtube\.com\/watch\?v=/)+20);
+	    videoIDs.push( splitMsg.substring(0,splitMsg.search(/(\s|$)/)) );
+	    msgString = splitMsg.substr(splitMsg.search(/\s|$/));
+	}
+
+	//shoot a request for data to google for each video ID
+	bot.log('Got video IDs: '+videoIDs.join(","));
+	for( var i=0; i<videoIDs.length; i++ ){
+		https.get('https://www.googleapis.com/youtube/v3/videos?part=snippet&id='+videoIDs[i]+'&key='+config.googleApi.key, function (res){
+			var body = '';
+
+			res.on('data', function (data){
+				body += data;
+			});
+
+			res.on('end', function (){
+				var vidData = JSON.parse(body);
+				if( vidData.items[0] && vidData.items[0].snippet ){
+					bot.client.say(to, '\x0303'+from+' posted a video: \x0310'+vidData.items[0].snippet.title+' (\x0312https://www.youtube.com/watch?v='+vidData.items[0].id+"\x0301)");
+				}
+			});
+		}).on( 'error', function (e){
+			bot.log('m_youtube request error: '+e, 2);
+		});
+	}
+};
 
 /** 
 *	COMMANDS
 */
-
 //!help [<command>]
 SurgeBot.prototype.help = function(from, to, params){
     var bot = this,
@@ -460,7 +515,6 @@ SurgeBot.prototype.auth = function (from, to, params){
 /*
 *	Enable/Disable commands
 */
-
 SurgeBot.prototype.commands = {
 	roll: true,
 	help: true,
