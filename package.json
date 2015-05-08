@@ -22,9 +22,7 @@
     "url": "https://github.com/DSurguy/SurgeBot/issues"
   },
   "dependencies": {
-    "irc": "~0.3.6"
-  },
-  "devDependencies": {
+    "irc": "~0.3.6",
     "mongodb": "^2.0.30",
     "q": "^1.3.0"
   }

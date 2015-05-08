@@ -3,42 +3,23 @@ var config = require('./config.js');
 var Articles = {
     //This contains a map of commands supported by help, and their associated help document
     Manifest: [
-        {cmd: "wowis,!wowis", docMap: "Commands.wowis"},
-        {cmd: "amr,!amr", docMap: "Commands.amr"},
-        {cmd: "list", docMap: "List"},
-        {cmd: "realm, !realm", docMap: "Commands.realm"},
-        {cmd: "wowhead, !wowhead", docMap: "Commands.wowhead"}
+        {cmd: "roll,!roll", docMap: "Commands.roll"}
     ],
 
     List: [
         "\x0311"+"Available Help Docs:",
-        "wowis, amr, realm, wowhead"
+        "roll"
     ],
 
     //WoWIRCBot command documentation
     Commands: {
-        /*wowis: [
-            "\x0311"+"Syntax: !wowis <Character> [<Realm>] [<Region>]",
-            "This command will generate a link to the official Battle.net armory page for the requested character.",
-            "The realm and region are optional, they will default to the following: ",
-                "Realm: \x0303"+config.wow.homeRealm+"\x0302   Region: \x0303"+config.wow.homeRegion,
-            "\x0315"+"Whisper this command to the bot for a private response!" ],
-        amr: [
-            "\x0311"+"Syntax: !amr <Character> [<Realm>] [<Region>]",
-            "This command will generate a link to AskMrRobot Gear Optimizer for the requested character.",
-            "The realm and region are optional, they will default to the following: ",
-            "Realm: \x0303"+config.wow.homeRealm+"\x0302   Region: \x0303"+config.wow.homeRegion,
-            "\x0315"+"Whisper this command to the bot for a private response!" ],
-        realm: [
-            "\x0311"+"Syntax: !realm [<Realm>] [<Region>]",
-            "This command will generate current realm information for the requested realm.",
-            "The realm and region are optional, they will default to the following: ",
-            "Realm: \x0303"+config.wow.homeRealm+"\x0302   Region: \x0303"+config.wow.homeRegion,
-            "\x0315"+"Whisper this command to the bot for a private response!"],
-        wowhead: [
-            "\x0311"+"Syntax: !wowhead <Search>",
-            "This command will generate a link to a wowhead search for the provided terms.",
-            "\x0315"+"Whisper this command to the bot for a private response!"]*/
+        roll: [
+            "\x0311"+"Syntax: !roll <die/minRoll> [<maxRoll>] [-m <multiplier>]",
+            "This command will execute a simulated dice roll, returning a random integer in the bounds provided.",
+            "The only required paramter is the die value. !roll # will roll between 1 and that number.",
+            "Passing a minimum and maximum (!roll min# max#) will roll between the given numbers. As an example, !roll 10 20 will roll between 10 and 20.",
+            "Passing the -m flag followed by a number will cause the result of the die or min/max roll to be multiplied by the given value. As an example, !roll 1 -m 3 will roll 3.",
+            "\x0315"+"Whisper this command to the bot for a private response!" ]
     },
 
     //Error report stating help command was not recognized

@@ -261,54 +261,210 @@ SurgeBot.prototype.roll = function(from, to, params){
 		})(argArray)
 	};
 
-	if( argArray.length == 4 ){
-		//assume !roll min max -m mult
-		if( isNaN(args.min) || isNaN(args.max) || isNaN(args.mult) ){
-			bot.client.say(to, 'Malformed !roll.');
-				//+'Expected !roll <die/min> [<max>] [-m <multiplier>], got !wowis <'+argArray[0]+'> [<'+argArray[1]+'>] [<'+argArray[2]+'>]. See \'!help wowis\'' for more information.'
-		}
-		else{
-			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min)*args.mult);
-		}
+	switch(argArray.length){
+		case 4:
+			//assume !roll min max -m mult
+			if( isNaN(args.min) || isNaN(args.max) || isNaN(args.mult) ){
+				bot.client.say(to, 'Malformed !roll. '
+					+'Expected !roll <min> <max> -m <multiplier>, '
+					+'got !roll <'+argArray[0]+'> <'+argArray[1]+'> <'+argArray[2]+'> <'+argArray[3]+'>. See \'!help roll\' for more information.');
+			}
+			else{
+				bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min)*args.mult);
+			}
+		break;
+
+		case 3:
+			//assume !roll die -m mult
+			if( isNaN(args.die) || isNaN(args.mult) ){
+				bot.client.say(to, 'Malformed !roll. '
+					+'Expected !roll <die> -m <multiplier>, '
+					+'got !roll <'+argArray[0]+'> <'+argArray[1]+'> <'+argArray[2]+'>. See \'!help roll\' for more information.');
+			}
+			else{
+				bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1)*args.mult);
+			}
+		break;
+	
+		case 2:
+			//assume !roll min max
+			if( isNaN(args.min) || isNaN(args.max) ){
+				bot.client.say(to, 'Malformed !roll. '
+					+'Expected !roll <min> <max>, '
+					+'got !roll <'+argArray[0]+'> <'+argArray[1]+'>. See \'!help roll\' for more information.');
+			}
+			else{
+				bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min) );
+			}
+		break;
+
+		case 1:
+			//assume !roll die
+			if( isNaN(args.die) ){
+				bot.client.say(to, 'Malformed !roll. '
+					+'Expected !roll <die>, '
+					+'got !roll <'+argArray[0]+'>. See \'!help roll\' for more information.');
+			}
+			else{
+				bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1) );
+			}
+		break;
+		
+		default:
+			bot.client.say(to, 'Malformed !roll. See \'!help roll\' for more information.');
+		break;
 	}
-	else if( argArray.length == 3 ){
-		//assume !roll die -m mult
-		if( isNaN(args.die) || isNaN(args.mult) ){
-			bot.client.say(to, 'Malformed !roll.');
-		}
-		else{
-			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1)*args.mult);
-		}
-	}
-	else if( argArray.length == 2 ){
-		//assume !roll min max
-		if( isNaN(args.min) || isNaN(args.max) ){
-			bot.client.say(to, 'Malformed !roll.');
-		}
-		else{
-			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min) );
-		}
-	}
-	else if( argArray.length == 1 ){
-		//assume !roll die
-		if( isNaN(args.die) ){
-			bot.client.say(to, 'Malformed !roll.');
-		}
-		else{
-			bot.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1) );
-		}
-	}
-	else{
-		bot.client.say(to, 'Malformed !roll.');
+};
+
+//!diceGame <start|end|play> [-b <bid>]
+SurgeBot.prototype.diceGame = function(from, to, params){
+	var bot = this,
+		argArray = params.split(" "),
+		argString = params,
+		target = to;
+
+	if( to == from ){
+		bot.client.say(to, '\x0304Dice Game must be started from main channel.');
 	}
 
+	var args = {
+		bid: (function (bidArgs){
+			for( var i=1; i<bidArgs.length; i++ ){
+				if( bidArgs[i] == "-b" && bidArgs[i+1] ){
+					return parseInt(bidArgs[i+1]);
+				}
+				else if( bidArgs[i] == "-b" ){
+					return NaN;
+				}
+			}
+			return undefined;
+		})(argArray),
+		start: argString.search(/\bstart\b/g) == 0,
+		end: argString.search(/\bend\b/g) == 0,
+		play: argString.search(/\bplay\b/g) == 0,
+	};
+
+	switch( argArray.length ){
+		case 3:
+			//expect !diceGame start -b bid
+			if( !args.start || isNaN(args.bid) ){
+				//malformed
+			}
+			else if( bot._diceGame.state == 1 && args.start ){
+				//game already started
+			}
+			//check if this player has enough currency and then start the game
+			else if( bot.checkCurrency(from, args.bid) ){
+				//good to start the game
+				bot._diceGame.state = 1;
+				bot._diceGame.bid = args.bid;
+				bot._diceGame.host = from;
+				//auto-join this player
+				var playerRoll = (Math.floor(Math.random() * (args.bid-1))+1);
+				bot._diceGame.players.push({player: from, roll: playerRoll});
+				//report the game start
+				bot.client.say(to, '\x0303Dice Game Started! \x0301BID: \x0310'+args.bid+' \x0301Type \'!diceGame play\' to join in!');
+				bot.client.say(to, from+' joined the game and rolled \x0303 '+playerRoll+' \x0314(out of '+args.bid+')');
+			}
+		break;
+		case 1:
+			//expect !diceGame end or !diceGame play
+			if( !args.end && !args.play ){
+				//malformed
+				bot.client.say(to, 'malformed request, tard');
+			}
+			else if( (args.end || args.play) && bot._diceGame.state == 0 ){
+				//game not started
+				bot.client.say(to, 'game no start');
+			}
+			else if( args.end && bot._diceGame.host !== from ){
+				//not correct host
+				bot.client.say(to, "INCORRECTO HOSTO");
+			}
+			else if( args.end ){
+				//correct host, end the game and payout
+				var results = bot._diceGame.players.reduce(function (resultObj, player){
+					if( player.roll > resultObj.winnerRoll ){
+						resultObj.winner = player.player;
+						resultObj.winnerRoll = player.roll;
+					}
+					if( player.roll < resultObj.loserRoll ){
+						resultObj.loser = player.player;
+						resultObj.loserRoll = player.roll;
+					}
+					return resultObj;
+				}, {
+					winner: undefined,
+					winnerRoll: 0,
+					loser: undefined,
+					loserRoll: bot._diceGame.bid
+				});
+
+				//report winner and loser
+				bot.client.say(to, '\x0303WINNER: '+results.winner+'\x0310('+results.winnerRoll+') \x0301:: \x0304LOSER: '+results.loser+'\x037('+results.loserRoll+')');
+				bot.client.say(to, '\x0314'+results.loser+' sends '+(results.winnerRoll-results.loserRoll)+' '+bot._currency.name+' to '+results.winner+'.');
+			}
+			else if( args.play ){
+				//search the players list for this user
+				var userFound = bot._diceGame.players.reduce(function (found, player){
+					if( found || player.name == from ){
+						return true;
+					}
+					return false;
+				},false);
+				if( userFound ){
+					//user already rolled
+					bot.client.say(from, 'You have already joined the game in progress with a roll of '+bot._diceGame.players.reduce(function (roll, player){
+						if( player.player == from ){
+							roll = player.roll;
+						}
+						return roll;
+					}, undefined)+'. Good luck!');
+				}
+				else{
+					//add a new player with a roll for this user and report
+					var playerRoll = (Math.floor(Math.random() * (bot._diceGame.bid-1))+1);
+					bot._diceGame.players.push({
+						player: from,
+						roll: playerRoll
+					});
+					bot.client.say(to, from+' joined the game and rolled \x0303 '+playerRoll+' \x0314(out of '+bot._diceGame.bid+')');
+				}
+			}
+		break;
+		default:
+			//malformed
+			bot.client.say(to, 'malformed request, tard');
+		break;
+	}
 };
+SurgeBot.prototype._diceGame = {
+	state: 0,
+	players: [],
+	bid: 0,
+	host: undefined
+};
+SurgeBot.prototype.checkCurrency = function(player, amount){
+	/*if( SurgeBot._users[player].currency < amount ){
+		return false;
+	}*/
+	return true;
+};
+SurgeBot.prototype._currency = {
+	name: "Zorklids"
+};
+SurgeBot.prototype.auth = function (from, to, params){
+
+};
+
 /*
 *	Enable/Disable commands
 */
 
 SurgeBot.prototype.commands = {
-	roll: true
+	roll: true,
+	help: true,
+	diceGame: true
 };
 
 /*
@@ -367,7 +523,7 @@ SurgeBot.prototype.processLogFileQueue = function(){
 			bot.logFile.writing = false;
 			//an error inside the log handler? Better just die.
 			if( err ){
-				console.log("Error while writing to log. " + logMessage);
+				console.log("Error while writing to log. " + err);
 				process.exit(1);
 			}
 			else{
