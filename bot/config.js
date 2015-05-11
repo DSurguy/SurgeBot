@@ -37,7 +37,23 @@ else{
         host: 'us.quakenet.org',
         nick: '['+String.fromCharCode(96+Date.now()%10) + ']SurgeBot',
         channels: ['#SurgeBot']
-    }
+    };
+}
+
+/**
+*   EMAIL CONFIG
+**/
+if( secret.email ){
+    config.email = {
+        service: secret.email.service ? secret.email.service : undefined,
+        port: secret.email.port ? secret.email.port : 25,
+        username: secret.email.username ? secret.email.username : undefined,
+        password: secret.email.password ? secret.email.password : undefined,
+        replyTo: secret.email.replyTo ? secret.email.replyTo : undefined
+    };
+}
+else{
+    secret.email = undefined;
 }
 
 /**

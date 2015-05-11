@@ -4,7 +4,8 @@ var irc = require('irc'),
 	fs = require('fs'),
     Docs = require('./Docs.js'),
     Q = require('q'),
-    Mongo = require('mongodb');
+    Mongo = require('mongodb'),
+    nodemailer = require('nodemailer');
 
 module.exports = SurgeBot;
 
@@ -33,8 +34,22 @@ function SurgeBot(){
 
 	});
 
+	//before connecting to IRC, create a nodemailer
+	if( config.email ){
+		bot.mailTransport = nodemailer.createTransport({
+			service: config.email.service,
+			port: config.email.port,
+			auth: {
+				user: config.email.user,
+				pass: config.email.pass
+			}
+		});
+	}
+	else{
+		//disable auth
+		bot.commands.auth = false;
+	}
 
-	//before connecting to the IRC network, create a mongo connection
 	bot.log("-----\nBot started.", 1);
 
 	//create a new IRC client
@@ -81,7 +96,7 @@ function SurgeBot(){
 	bot.client.connect(1, function(){
 		bot.log("Connection to IRC server successful. Listening for messages.", 1);
 	});
-}
+};
 
 /**
 * FLOOD PREVENTION
@@ -184,7 +199,7 @@ SurgeBot.prototype.checkFlood = function(host){
 };
 
 /**
-*	Message parsing
+*	MESSAGE PARSING
 **/
 
 SurgeBot.prototype.parseCommand = function(from, to, command, params){
@@ -508,8 +523,171 @@ SurgeBot.prototype.checkCurrency = function(player, amount){
 SurgeBot.prototype._currency = {
 	name: "Zorklids"
 };
-SurgeBot.prototype.auth = function (from, to, params){
 
+//!auth [-r <email> <pass>]|[-c <code>]|[<pass>]|[-p]
+SurgeBot.prototype.auth = function (from, to, params){
+	var bot = this,
+		argArray = params.split(" "),
+		target = to,
+		args;
+
+	args = {
+		resetPass: argArray.indexOf('-p') == 0 && argArray.length == 1,
+		pass: argArray.length == 1 ? argArray[0] : undefined,
+		code: (function (regArgs){
+			for( var i=1; i<regArgs.length; i++ ){
+				if( regArgs[i] == "-c" && regArgs[i+1] ){
+					return regArgs[i+1];
+				}
+				else if( regArgs[i] == "-c" ){
+					return 1;
+				}
+			}
+			return undefined;
+		})(argArray)
+	};
+
+	args.regEmail = argArray[argArray.indexOf('-r')+1];
+	args.regPass = argArray[argArray.indexOf('-r')+2];
+
+	//check if this user exists
+	var d$userExists = Q.defer();
+	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+		var collection = db.collection('Users');
+
+		collection.find({name: from}).toArray(function (err, docs){
+			if( err ){
+				d$userExists.reject(err);
+				db.close();
+				return;
+			}
+			if( docs.length > 0 ){
+				//this user exists, resolve the deferred object with the user data
+				d$userExists.resolve(docs[0]);
+			}
+			else{
+				//this user doesn't exists, resolve with undefined
+				d$userExists.resolve();
+			}
+
+			db.close();
+		});
+	});
+
+	Q.when(d$userExists).then(function (user){
+
+		if( user ){
+			//we have user data
+			if( args.pass && args.pass == user.pass ){
+				if( bot._authedUsers[from] ){
+					//already authed
+				}
+				else{
+					//password is correct, send auth code to email and update pendingAuths
+					var authCode = bot.generateAuthCode();
+
+					//send the email
+					var emailMsg: ['SurgeBot has received an auth request from the user '+from+' on network: '+config.irc.host,
+						'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'.',
+						'',
+						'/msg '+config.irc.nick+' !auth -c '+bot._pendingAuths[from].code,
+						'',
+						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
+					bot.mailTransport.sendMail({
+						from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
+						to: user.email,
+						subject: config.irc.nick+' IRC Auth Confirmation',
+						text: emailMsg.join("\n"),
+						html: '<p>'+emailMsg.join("</p><p>")+'</p>'
+					}, function (err){
+						if( err ){
+							//log and report
+							bot.log(err, 2);
+							bot.client.say(from, '\x0304-e- Auth request received, but email was unable to be sent to the email registered to '+from'.');
+						}
+						else{
+							//report success and wait for auth code
+							bot._pendingAuths[from] = {
+								code: authCode
+							};
+							bot.client.say(from, 'Auth request received. Please check the email you registered with for an auth code.'
+								+' You can use the code with !auth -c <CODE> to complete the auth process.');
+						}
+					});
+				}
+			}
+		}
+		else{
+			//no user data
+			if( typeof args.regEmail == "string" ){
+				//check if this is a real email?
+				if( args.regEmail.isRealEmail ){
+					//generate an auth code for this user
+					var authCode = bot.generateAuthCode();
+
+					//send the email
+					var emailMsg: ['SurgeBot has received a registration request from the user '+from+' on network: '+config.irc.host,
+						'Paste the following command in IRC to whisper your registration code to '+config.irc.nick+'.',
+						'',
+						'/msg '+config.irc.nick+' !auth -r '+bot._pendingAuths[from].code+' <PASSWORD>'+,
+						'(Replace <PASSWORD> with a new password)',
+						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
+					bot.mailTransport.sendMail({
+						from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
+						to: user.email,
+						subject: config.irc.nick+' IRC Registration Confirmation',
+						text: emailMsg.join("\n"),
+						html: '<p>'+emailMsg.join("</p><p>")+'</p>'
+					}, function (err){
+						if( err ){
+							//log and report
+							bot.log(err, 2);
+							bot.client.say(from, '\x0304-e- Auth request received, but email was unable to be sent to the email registered to '+from'.');
+						}
+						else{
+							//report success and wait for auth code
+							bot._pendingRegistrations[from] = {
+								code: authCode
+							};
+							bot.client.say(from, 'Registration request received. Please check the email you registered with for an auth code.'
+								+' You can use the code with !auth -r <CODE> <PASSWORD> to complete the auth process.');
+						}
+					});
+				}
+				else{
+					//please enter a real email
+				}
+			}
+			else if( args.regEmail ){
+				//please enter a real email
+			}
+			else {
+				//no user data, no reg flag. 
+				//please register !auth -r <email>
+			}
+		}
+	}).catch(function (err){
+		bot.log(err, 2);
+		bot.client.say(to, "\x0304-e- Error during user lookup. See log for details.");
+	});
+};
+SurgeBot.prototype._authedUsers = {};
+SurgeBot.prototype._pendingAuths = {};
+SurgeBot.prototype._pendingRegistrations = {};
+SurgeBot.prototype.generateAuthCode = function(){
+	var chars = [0,1,2,3,4,5,6,7,8,9],
+		authCode = [];
+
+	for( var i=0; i<26; i++ ){
+		letters.push(String.fromCharCode(65+i));
+		letters.push(String.fromCharCode(97+i));
+	}
+
+	//generate 8 random characters and return them
+	for( var i=0; i<8; i++ ){
+		authCode.push( chars[Math.floor(Math.random()*(chars.length-1))] );
+	}
+	return authCode.join("");
 };
 
 /*
@@ -518,7 +696,8 @@ SurgeBot.prototype.auth = function (from, to, params){
 SurgeBot.prototype.commands = {
 	roll: true,
 	help: true,
-	diceGame: true
+	diceGame: true,
+	auth: true
 };
 
 /*
