@@ -46,6 +46,8 @@ else{
 if( secret.email ){
     config.email = {
         service: secret.email.service ? secret.email.service : undefined,
+        secure: secret.email.secure ? secret.email.secure : false,
+        host: secret.email.host ? secret.email.host : undefined,
         port: secret.email.port ? secret.email.port : 25,
         username: secret.email.username ? secret.email.username : undefined,
         password: secret.email.password ? secret.email.password : undefined,

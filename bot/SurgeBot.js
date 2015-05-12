@@ -39,9 +39,11 @@ function SurgeBot(){
 		bot.mailTransport = nodemailer.createTransport({
 			service: config.email.service,
 			port: config.email.port,
+			host: config.email.host,
+			secure: config.email.secure,
 			auth: {
-				user: config.email.user,
-				pass: config.email.pass
+				user: config.email.username,
+				pass: config.email.password
 			}
 		});
 	}
@@ -547,8 +549,8 @@ SurgeBot.prototype.auth = function (from, to, params){
 		})(argArray)
 	};
 
-	args.regEmail = argArray[argArray.indexOf('-r')+1];
-	args.regPass = argArray[argArray.indexOf('-r')+2];
+	args.regEmail = argArray.indexOf('-r') == 0 ? argArray[argArray.indexOf('-r')+1] : undefined;
+	args.regPass = argArray.indexOf('-r') == 0 ? argArray[argArray.indexOf('-r')+2] : undefined;
 
 	//check if this user exists
 	var d$userExists = Q.defer();
@@ -575,19 +577,21 @@ SurgeBot.prototype.auth = function (from, to, params){
 	});
 
 	Q.when(d$userExists).then(function (user){
-
-		if( user ){
+		bot.log( 'User Data: ',2);
+		bot.log(user,2);
+		if( user[0] ){
 			//we have user data
 			if( args.pass && args.pass == user.pass ){
 				if( bot._authedUsers[from] ){
 					//already authed
+					bot.client.say(from, 'already authed');
 				}
 				else{
 					//password is correct, send auth code to email and update pendingAuths
 					var authCode = bot.generateAuthCode();
 
 					//send the email
-					var emailMsg: ['SurgeBot has received an auth request from the user '+from+' on network: '+config.irc.host,
+					var emailMsg = ['SurgeBot has received an auth request from the user '+from+' on network: '+config.irc.host,
 						'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'.',
 						'',
 						'/msg '+config.irc.nick+' !auth -c '+bot._pendingAuths[from].code,
@@ -602,8 +606,8 @@ SurgeBot.prototype.auth = function (from, to, params){
 					}, function (err){
 						if( err ){
 							//log and report
-							bot.log(err, 2);
-							bot.client.say(from, '\x0304-e- Auth request received, but email was unable to be sent to the email registered to '+from'.');
+							bot.log('MailError: '+err, 2);
+							bot.client.say(from, '\x0304-e- Auth request received, but email was unable to be sent to the email registered to '+from+'.');
 						}
 						else{
 							//report success and wait for auth code
@@ -619,35 +623,37 @@ SurgeBot.prototype.auth = function (from, to, params){
 		}
 		else{
 			//no user data
-			if( typeof args.regEmail == "string" ){
+			if( args.regEmail && args.regPass ){
 				//check if this is a real email?
-				if( args.regEmail.isRealEmail ){
+				if( (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,4}$/).test(args.regEmail) && args.regPass.trim() !== '' ){
 					//generate an auth code for this user
 					var authCode = bot.generateAuthCode();
 
 					//send the email
-					var emailMsg: ['SurgeBot has received a registration request from the user '+from+' on network: '+config.irc.host,
+					var emailMsg = ['SurgeBot has received a registration request from the user '+from+' on network: '+config.irc.host,
 						'Paste the following command in IRC to whisper your registration code to '+config.irc.nick+'.',
 						'',
-						'/msg '+config.irc.nick+' !auth -r '+bot._pendingAuths[from].code+' <PASSWORD>'+,
-						'(Replace <PASSWORD> with a new password)',
+						'/msg '+config.irc.nick+' !auth -c '+authCode,
+						'',
 						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
 					bot.mailTransport.sendMail({
 						from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
-						to: user.email,
+						to: args.regEmail,
 						subject: config.irc.nick+' IRC Registration Confirmation',
 						text: emailMsg.join("\n"),
 						html: '<p>'+emailMsg.join("</p><p>")+'</p>'
 					}, function (err){
 						if( err ){
 							//log and report
-							bot.log(err, 2);
-							bot.client.say(from, '\x0304-e- Auth request received, but email was unable to be sent to the email registered to '+from'.');
+							bot.log('MailError: '+err, 2);
+							bot.client.say(from, '\x0304-e- Auth request received, but email was unable to be sent to the email registered to '+from+'.');
 						}
 						else{
 							//report success and wait for auth code
 							bot._pendingRegistrations[from] = {
-								code: authCode
+								code: authCode,
+								email: args.regEmail,
+								pass: args.regPass
 							};
 							bot.client.say(from, 'Registration request received. Please check the email you registered with for an auth code.'
 								+' You can use the code with !auth -r <CODE> <PASSWORD> to complete the auth process.');
@@ -655,18 +661,25 @@ SurgeBot.prototype.auth = function (from, to, params){
 					});
 				}
 				else{
-					//please enter a real email
+					//please enter a real email or password
+					bot.client.say(from, 'Malformed !auth. Expected !auth -r <validemail> <password>, but got '
+						+'!auth -r <'+args.regEmail+'> <'+args.regPass+'>. Please enter a valid email and password to register.');
 				}
 			}
-			else if( args.regEmail ){
-				//please enter a real email
+			else if( args.regEmail || args.regPass ){
+				//malformed request, one of the args is missing
+				bot.client.say(from, 'Malformed !auth. Expected !auth -r <validemail> <password>, but got '
+					+'!auth -r <'+args.regEmail+'> <'+args.regPass+'>. Please enter a valid email and password to register.');
+			}
+			else if( args.code ){
+				
 			}
 			else {
-				//no user data, no reg flag. 
-				//please register !auth -r <email>
+				//malformed request
+				bot.client.say(from, 'Malformed !auth. Expected !auth [-r <email> <pass>]|[-c <code>]|[<pass>]|[-p].');
 			}
 		}
-	}).catch(function (err){
+	}, function (err){
 		bot.log(err, 2);
 		bot.client.say(to, "\x0304-e- Error during user lookup. See log for details.");
 	});
@@ -679,8 +692,8 @@ SurgeBot.prototype.generateAuthCode = function(){
 		authCode = [];
 
 	for( var i=0; i<26; i++ ){
-		letters.push(String.fromCharCode(65+i));
-		letters.push(String.fromCharCode(97+i));
+		chars.push(String.fromCharCode(65+i));
+		chars.push(String.fromCharCode(97+i));
 	}
 
 	//generate 8 random characters and return them
