@@ -5,7 +5,8 @@ var irc = require('irc'),
     Docs = require('./Docs.js'),
     Q = require('q'),
     Mongo = require('mongodb'),
-    nodemailer = require('nodemailer');
+    nodemailer = require('nodemailer'),
+    bcrypt = require('bcrypt-nodejs');
 
 module.exports = SurgeBot;
 
@@ -426,17 +427,23 @@ SurgeBot.prototype.diceGame = function(from, to, params){
 				//game already started
 			}
 			//check if this player has enough currency and then start the game
-			else if( bot.checkCurrency(from, args.bid) ){
-				//good to start the game
-				bot._diceGame.state = 1;
-				bot._diceGame.bid = args.bid;
-				bot._diceGame.host = from;
-				//auto-join this player
-				var playerRoll = (Math.floor(Math.random() * (args.bid-1))+1);
-				bot._diceGame.players.push({player: from, roll: playerRoll});
-				//report the game start
-				bot.client.say(to, '\x0303Dice Game Started! \x0301BID: \x0310'+args.bid+' \x0301Type \'!diceGame play\' to join in!');
-				bot.client.say(to, from+' joined the game and rolled \x0303 '+playerRoll+' \x0314(out of '+args.bid+')');
+			else{
+				if( bot.checkCurrency(from, args.bid) ){
+					//good to start the game
+					bot._diceGame.state = 1;
+					bot._diceGame.bid = args.bid;
+					bot._diceGame.host = from;
+					//auto-join this player
+					var playerRoll = (Math.floor(Math.random() * (args.bid-1))+1);
+					bot._diceGame.players.push({player: from, roll: playerRoll});
+					//report the game start
+					bot.client.say(to, '\x0303Dice Game Started! \x0301BID: \x0310'+args.bid+' \x0301Type \'!diceGame play\' to join in!');
+					bot.client.say(to, from+' joined the game and rolled \x0303 '+playerRoll+' \x0314(out of '+args.bid+')');
+				}
+				else{
+					//not enough cash
+					bot.client.say(to, from+' doesn\'t have enough '+bot._currency.name+' to join the game!');
+				}
 			}
 		break;
 		case 1:
@@ -517,9 +524,10 @@ SurgeBot.prototype._diceGame = {
 	host: undefined
 };
 SurgeBot.prototype.checkCurrency = function(player, amount){
-	/*if( SurgeBot._users[player].currency < amount ){
+	var bot = this;
+	if( bot._authedUsers[player] && bot._authedUsers[player].currency < amount ){
 		return false;
-	}*/
+	}
 	return true;
 };
 SurgeBot.prototype._currency = {
@@ -535,22 +543,13 @@ SurgeBot.prototype.auth = function (from, to, params){
 
 	args = {
 		resetPass: argArray.indexOf('-p') == 0 && argArray.length == 1,
-		pass: argArray.length == 1 ? argArray[0] : undefined,
-		code: (function (regArgs){
-			for( var i=1; i<regArgs.length; i++ ){
-				if( regArgs[i] == "-c" && regArgs[i+1] ){
-					return regArgs[i+1];
-				}
-				else if( regArgs[i] == "-c" ){
-					return 1;
-				}
-			}
-			return undefined;
-		})(argArray)
+		pass: argArray.length == 1 ? argArray[0] : undefined
 	};
 
 	args.regEmail = argArray.indexOf('-r') == 0 ? argArray[argArray.indexOf('-r')+1] : undefined;
 	args.regPass = argArray.indexOf('-r') == 0 ? argArray[argArray.indexOf('-r')+2] : undefined;
+	args.code = argArray.indexOf('-c') == 0 ? argArray[argArray.indexOf('-c')+1] : undefined;
+	args.codeName = argArray.indexOf('-c') == 0 ? argArray[argArray.indexOf('-c')+2] : undefined;
 
 	//check if this user exists
 	var d$userExists = Q.defer();
@@ -576,48 +575,31 @@ SurgeBot.prototype.auth = function (from, to, params){
 		});
 	});
 
-	Q.when(d$userExists).then(function (user){
-		bot.log( 'User Data: ',2);
-		bot.log(user,2);
-		if( user[0] ){
+	Q.when(d$userExists.promise).then(function (user){
+		bot.log( 'User Data: '+JSON.stringify(user),2);
+		if( user.length === undefined && user.name ){
+			bot.log('user exists',4);
+			bot.log('Args: '+JSON.stringify(args),4);
 			//we have user data
-			if( args.pass && args.pass == user.pass ){
-				if( bot._authedUsers[from] ){
-					//already authed
-					bot.client.say(from, 'already authed');
+			if( args.pass ){
+				try{
+				if( bcrypt.compareSync(args.pass, user.pwd) ){
+					if( bot._authedUsers[from] ){
+						//already authed
+						bot.client.say(from, 'already authed');
+					}
+					else{
+						//add this user to authed users and let them know
+						bot._authedUsers[from] = user;
+						bot.client.say(from, '\x0303You have been authorized as '+from+', welcome back!');
+					}
 				}
-				else{
-					//password is correct, send auth code to email and update pendingAuths
-					var authCode = bot.generateAuthCode();
-
-					//send the email
-					var emailMsg = ['SurgeBot has received an auth request from the user '+from+' on network: '+config.irc.host,
-						'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'.',
-						'',
-						'/msg '+config.irc.nick+' !auth -c '+bot._pendingAuths[from].code,
-						'',
-						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
-					bot.mailTransport.sendMail({
-						from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
-						to: user.email,
-						subject: config.irc.nick+' IRC Auth Confirmation',
-						text: emailMsg.join("\n"),
-						html: '<p>'+emailMsg.join("</p><p>")+'</p>'
-					}, function (err){
-						if( err ){
-							//log and report
-							bot.log('MailError: '+err, 2);
-							bot.client.say(from, '\x0304-e- Auth request received, but email was unable to be sent to the email registered to '+from+'.');
-						}
-						else{
-							//report success and wait for auth code
-							bot._pendingAuths[from] = {
-								code: authCode
-							};
-							bot.client.say(from, 'Auth request received. Please check the email you registered with for an auth code.'
-								+' You can use the code with !auth -c <CODE> to complete the auth process.');
-						}
-					});
+				else {
+					//pass didn't match somehow
+					bot.client.say(from, 'Password incorrect!');
+				}
+				}catch(e){
+					bot.log(e,4);
 				}
 			}
 		}
@@ -653,10 +635,11 @@ SurgeBot.prototype.auth = function (from, to, params){
 							bot._pendingRegistrations[from] = {
 								code: authCode,
 								email: args.regEmail,
-								pass: args.regPass
+								pass: args.regPass,
+								attempts: 0
 							};
 							bot.client.say(from, 'Registration request received. Please check the email you registered with for an auth code.'
-								+' You can use the code with !auth -r <CODE> <PASSWORD> to complete the auth process.');
+								+' You can use the code with !auth -c <CODE> to complete the auth process.');
 						}
 					});
 				}
@@ -667,12 +650,39 @@ SurgeBot.prototype.auth = function (from, to, params){
 				}
 			}
 			else if( args.regEmail || args.regPass ){
+				bot.log('Reg.', 4);
 				//malformed request, one of the args is missing
 				bot.client.say(from, 'Malformed !auth. Expected !auth -r <validemail> <password>, but got '
 					+'!auth -r <'+args.regEmail+'> <'+args.regPass+'>. Please enter a valid email and password to register.');
 			}
 			else if( args.code ){
-				
+				bot.log('Code Received: '+args.code, 4);
+				//search through the pending users to see what this is being used for
+				if( bot._pendingRegistrations[from] ){
+					//check if the code pasted matches
+					if( bot._pendingRegistrations[from].code == args.code ){
+						//this user is now registered, add them to the database and prompt for auth
+						var newUser = bot._pendingRegistrations[from];
+						bot._u.addUser(from, newUser.pass, newUser.email).then(function(){
+							//now prompt for auth since the user exists
+							bot.client.say(from, 'You are now registered to '+config.irc.nick+' as '+from+'! Please auth with !auth <PASS> to complete login.');
+						}).catch(function (omgError){
+							//tell the user there was an error.
+							bot.client.say(from, '\x0304-e- There was an error during registration. \x0301Please see the bot administrator for details.');
+						});
+					}
+					else if( bot._pendingRegistrations[from].attempts == 2 ){
+						//Too many invalid attempts. Remove the pending auth.
+						bot.log('User '+from+' has failed too many registration attempts.', 2);
+						delete bot._pendingRegistrations[from];
+						bot.client.say('\x0304Too many invalid registration attempts have been detected. Your registration has been removed and logged. Please see bot administrator for details.')
+					}
+					else{
+						//log a failed attempt
+						bot._pendingRegistrations[from].attempts++;
+						bot.client.say(from, '\x0304Invalid registration code. Please try again. You have 2 attempts remaining before the code is invalidated.');
+					}
+				}
 			}
 			else {
 				//malformed request
@@ -685,7 +695,6 @@ SurgeBot.prototype.auth = function (from, to, params){
 	});
 };
 SurgeBot.prototype._authedUsers = {};
-SurgeBot.prototype._pendingAuths = {};
 SurgeBot.prototype._pendingRegistrations = {};
 SurgeBot.prototype.generateAuthCode = function(){
 	var chars = [0,1,2,3,4,5,6,7,8,9],
@@ -701,6 +710,34 @@ SurgeBot.prototype.generateAuthCode = function(){
 		authCode.push( chars[Math.floor(Math.random()*(chars.length-1))] );
 	}
 	return authCode.join("");
+};
+
+SurgeBot.prototype._u = {};
+SurgeBot.prototype._u.addUser = function(name, pwd, email){
+
+	var d$insert = Q.defer();
+
+	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+		var collection = db.collection('Users');
+
+		collection.insert([{
+			name: name,
+			pwd: bcrypt.hashSync(pwd),
+			email: email,
+			currency: 0
+		}], function (err, result){
+			if( err ){
+				d$insert.reject(err);
+			}
+			else{
+				d$insert.resolve(result);
+			}
+			db.close();
+		});
+	});
+
+	//return the promise so things can listen for resolves and rejects
+	return d$insert.promise;
 };
 
 /*
