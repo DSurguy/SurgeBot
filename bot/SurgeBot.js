@@ -576,13 +576,9 @@ SurgeBot.prototype.auth = function (from, to, params){
 	});
 
 	Q.when(d$userExists.promise).then(function (user){
-		bot.log( 'User Data: '+JSON.stringify(user),2);
-		if( user.length === undefined && user.name ){
-			bot.log('user exists',4);
-			bot.log('Args: '+JSON.stringify(args),4);
+		if( user && user.length === undefined && user.name ){
 			//we have user data
 			if( args.pass ){
-				try{
 				if( bcrypt.compareSync(args.pass, user.pwd) ){
 					if( bot._authedUsers[from] ){
 						//already authed
@@ -597,9 +593,6 @@ SurgeBot.prototype.auth = function (from, to, params){
 				else {
 					//pass didn't match somehow
 					bot.client.say(from, 'Password incorrect!');
-				}
-				}catch(e){
-					bot.log(e,4);
 				}
 			}
 		}
@@ -650,7 +643,6 @@ SurgeBot.prototype.auth = function (from, to, params){
 				}
 			}
 			else if( args.regEmail || args.regPass ){
-				bot.log('Reg.', 4);
 				//malformed request, one of the args is missing
 				bot.client.say(from, 'Malformed !auth. Expected !auth -r <validemail> <password>, but got '
 					+'!auth -r <'+args.regEmail+'> <'+args.regPass+'>. Please enter a valid email and password to register.');
