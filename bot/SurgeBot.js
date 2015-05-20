@@ -556,6 +556,7 @@ SurgeBot.prototype.auth = function (from, to, params, raw){
 	args.codePass = argArray.indexOf('-c') == 0 ? argArray[argArray.indexOf('-c')+3] : undefined;
 
 	args.resetFlag = argArray.indexOf('-p') == 0 ? argArray[argArray.indexOf('-p')] : undefined;
+	args.resetUser = argArray.indexOf('-p') == 0 ? argArray[argArray.indexOf('-p')+1] : undefined;
 
 	//Registration
 	if( args.regEmail && args.regUser ){
@@ -588,18 +589,35 @@ SurgeBot.prototype.auth = function (from, to, params, raw){
 			}
 			else if( bot.Auth_pendingRegistrations[args.codeUser].attempts == 2 ){
 				//Too many invalid attempts. Remove the pending auth.
-				bot.log('User '+args.codeUser+' has failed too many registration attempts.', 2);
+				bot.log('User '+args.codeUser+' has failed too many auth code attempts.', 2);
 				delete bot.Auth_pendingRegistrations[args.codeUser];
 				bot.client.say('\x0304Too many invalid registration attempts have been detected. Your registration attempt has been removed and logged. Please see bot administrator for details.')
 			}
 			else{
 				//log a failed attempt
 				bot.Auth_pendingRegistrations[args.codeUser].attempts++;
-				bot.client.say(from, '\x0304Invalid registration code. Please try again. You have '+(3-bot.Auth_pendingRegistrations[args.codeUser].attempts)+' attempts remaining before the code is invalidated.');
+				bot.client.say(from, '\x0304Invalid auth code. Please try again. You have '+(3-bot.Auth_pendingRegistrations[args.codeUser].attempts)+' attempts remaining before the code is invalidated.');
 			}
 		}
 		else if( bot.Auth_pendingResets[args.codeUser] ){
-
+			if( bot.Auth_pendingResets[args.codeUser].code == args.code ){
+				bot.Auth_updatePassword(args.codeUser, args.codePass).then(function(){
+					bot.client.say(from, 'Your password has been updated. Please auth with !auth <user> <pass> to complete login.');
+				}, function (err){
+					bot.client.say(from, '\x0304There was an error during the password reset process. \x0301Please see the bot administrator for details.');
+				});
+			}
+			else if( bot.Auth_pendingResets[args.codeUser].attempts == 2 ){
+				//Too many invalid attempts. Remove the pending auth.
+				bot.log('User '+args.codeUser+' has failed too many auth code attempts.', 2);
+				delete bot.Auth_pendingResets[args.codeUser];
+				bot.client.say('\x0304Too many invalid password resets attempts have been detected. Your reset attempt has been removed and logged. Please see bot administrator for details.')
+			}
+			else{
+				//log a failed attempt
+				bot.Auth_pendingResets[args.codeUser].attempts++;
+				bot.client.say(from, '\x0304Invalid auth code code. Please try again. You have '+(3-bot.Auth_pendingResets[args.codeUser].attempts)+' attempts remaining before the code is invalidated.');
+			}
 		}
 	}
 	else if( args.codeFlag ){
@@ -607,8 +625,17 @@ SurgeBot.prototype.auth = function (from, to, params, raw){
 			+'!auth -c <'+args.code+'> <'+args.codeUser+'> <'+args.codePass+'>. Please enter a valid email and username to register.');
 	}
 	//Password Reset
+	else if( args.resetUser ){
+		bot.Auth_handleReset(args.resetUser, from, raw).then(function(){
+			bot.client.say(from, 'Password reset request received. Please check the email you registered with for an auth code.'
+				+' You can use the code with !auth -c <CODE> <USER> <PASS> to complete the password reset process.');
+		}, function (err){
+			bot.client.say(from, '\x0304There was an error during the password reset process. \x0301Please see the bot administrator for details.');
+		});
+	}
 	else if( args.resetFlag ){
-
+		bot.client.say(from, 'Malformed !auth. Expected !auth -p <user>, but got '
+			+'!auth -p <'+args.resetUser+'>. See !help auth for more information.');
 	}
 	//Login
 	else if( args.user && args.pass ){
@@ -666,6 +693,29 @@ SurgeBot.prototype.Auth_addUser = function(name, pwd, email){
 
 	//return the promise so things can listen for resolves and rejects
 	return d$insert.promise;
+};
+SurgeBot.prototype.Auth_updatePassword = function(name, pwd){
+	var bot = this,
+		d$update = Q.defer();
+
+	//connect to mongo and see if this user exists
+	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+		var collection = db.collection('Users');
+
+		collection.update({name: name}, { $set: 
+			{ pwd: bcrypt.hashSync(pwd) }
+		}, function (err, result){
+			if( err ){
+				d$update.reject(err);
+			}
+			else{
+				delete bot.Auth_pendingResets[name];
+				d$update.resolve(result);
+			}
+			db.close();
+		});
+	});
+	return d$update.promise;
 };
 
 SurgeBot.prototype.Auth_handleRegistration = function(regEmail, regUser, from){
@@ -781,7 +831,64 @@ SurgeBot.prototype.Auth_handleLogin = function(loginUser, loginPass, from, raw){
 	return d$login.promise;
 };
 
+SurgeBot.prototype.Auth_handleReset = function(resetUser, from, raw){
+	var bot = this,
+		d$reset = Q.defer();
 
+	//connect to mongo and see if this user exists
+	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+		var collection = db.collection('Users');
+
+		collection.find({ name: resetUser}).toArray(function (err, docs){
+			if( err ){
+				bot.log('Error during password reset request: '+err);
+				d$reset.reject('Error during user lookup, please contact bot administrator for details');
+				db.close();
+				return;
+			}
+			if( docs.length == 0 ){
+				//this user doesn't exist, do nothing, but resolve to obscure user existance
+				d$reset.resolve();
+			}
+			else{
+				//this user exists, send an auth code and add them to pending resets
+				var authCode = bot.Auth_generateAuthCode();
+
+				//send the email
+				var emailMsg = ['SurgeBot has received a password reset request for the user '+resetUser+' from the nick '+from+' on network: '+config.irc.host,
+					'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'. Replace PASS with a new password.',
+					'',
+					'/msg '+config.irc.nick+' !auth -c '+authCode+' '+resetUser+' PASS',
+					'',
+					'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
+				bot.mailTransport.sendMail({
+					from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
+					to: docs[0].email,
+					subject: config.irc.nick+' IRC Password Reset Confirmation',
+					text: emailMsg.join("\n"),
+					html: '<p>'+emailMsg.join("</p><p>")+'</p>'
+				}, function (err){
+					if( err ){
+						//log and report
+						bot.log('MailError: '+err, 2);
+						d$reset.reject('Unable to send email');
+					}
+					else{
+						//report success and wait for auth code
+						bot.Auth_pendingResets[resetUser] = {
+							code: authCode,
+							attempts: 0
+						};
+						d$reset.resolve();
+					}
+				});
+			}
+
+			db.close();
+		});
+	});
+	return d$reset.promise;
+};
 
 /*
 *	Enable/Disable commands
