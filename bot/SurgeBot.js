@@ -291,13 +291,9 @@ SurgeBot.prototype.help = function(from, to, params){
 
 //Router for help command
 SurgeBot.prototype.routeHelp = function(requestedArticle){
-	if( requestedArticle == "" ){
-		return Docs.Error("undefined");
-	}
     //grab the related help doc
-    var regex = new RegExp("\\b"+requestedArticle+"\\b", "g");
     for( var i=0; i<Docs.Manifest.length; i++ ){
-        if( Docs.Manifest[i].cmd.search(regex) !== -1 ){
+        if( Docs.Manifest[i].cmd == requestedArticle || Docs.Manifest[i].cmd.indexOf(requestedArticle) !== -1 ){
             //we have a match, return this doc!
             var docPath = Docs,
                 map = Docs.Manifest[i].docMap.split(".");

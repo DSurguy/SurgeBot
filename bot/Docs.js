@@ -3,8 +3,9 @@ var config = require('./config.js');
 var Articles = {
     //This contains a map of commands supported by help, and their associated help document
     Manifest: [
-        {cmd: "roll,!roll", docMap: "Commands.roll"},
-        {cmd: "auth,!auth", docMap: "Commands.auth"}
+        {cmd: "roll", docMap: "Commands.roll"},
+        {cmd: "auth", docMap: "Commands.auth"},
+        {cmd: ["list",undefined], docMap: "List"},
     ],
 
     List: [
