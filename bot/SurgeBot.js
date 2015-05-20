@@ -291,6 +291,9 @@ SurgeBot.prototype.help = function(from, to, params){
 
 //Router for help command
 SurgeBot.prototype.routeHelp = function(requestedArticle){
+	if( requestedArticle == '' ){
+		reqeustedArticle = 'list';
+	}
     //grab the related help doc
     for( var i=0; i<Docs.Manifest.length; i++ ){
         if( Docs.Manifest[i].cmd == requestedArticle || Docs.Manifest[i].cmd.indexOf(requestedArticle) !== -1 ){
