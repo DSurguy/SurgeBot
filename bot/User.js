@@ -12,10 +12,31 @@ function UserService(log){
 	};
 };
 
-UserService.prototype.getUserStatus = function(user){
-	if(  )
+UserService.prototype.getUserAuthStatus = function(user){
+	if( this._activeUsers[user] ){
+		return 2;
+	}
+	else if( this._pendingRegistration[user] ){
+		return 1;
+	}
+	else {
+		return 0;
+	}
 };
 
+UserService.prototype.getUserResetStatus = function(user){
+	if( this._pendingReset[user] ){
+		return 1;
+	}
+	else{
+		return 0;
+	}
+};
+
+/** 
+*	Some constants to provide additional human-readability
+*	when checking errors or status
+*/
 UserService.prototype._C = {
 	LOGIN_USERNOTEXIST: 0,
 	LOGIN_USERACTIVESESSION: 1,
@@ -25,10 +46,15 @@ UserService.prototype._C = {
 	REGISTER_EMAILERROR: 1,
 	REGISTER_INVALIDEMAIL: 2,
 	REGISTER_INSERTERROR: 3,
+	REGISTER_INVALIDCODE: 4,
+	REGISTER_NOTPENDING: 5,
 
 	STATUS_NOTAUTHED: 0,
 	STATUS_PENDINGREGISTRATION: 1,
-	STATUS_AUTHED: 2
+	STATUS_AUTHED: 2,
+
+	STATUS_NORESET: 0,
+	STATUS_PENDINGRESET: 1
 };
 
 UserService.prototype.generateAuthCode = function(){
@@ -137,6 +163,14 @@ UserService.prototype.endRegistration = function(user, pwd, authCode){
 			});
 		});
 	}
+	else if( pendingUser ){
+		//the code didn't match
+		d$insert.reject(4);
+	}
+	else{
+		//user is not pending registration
+		d$insert.reject(5);
+	}
 
 	//return the promise so things can listen for resolves and rejects
 	return d$insert.promise;
@@ -148,6 +182,8 @@ UserService.prototype.createNewUser = function(user, pwd, email){
 	newUser.name = user;
 	newUser.pwd = bcrypt.hashSync(pwd);
 	newUser.email = email;
+
+	return newUser;
 };
 
 UserService.prototype.login = function(user, pwd, session){
@@ -201,8 +237,4 @@ UserService.prototype.login = function(user, pwd, session){
 
 UserService.prototype.resetPassword = function(user, newPwd){
 
-};
-
-UserService.createNewUser = function(user, pwd){
-	
 };
