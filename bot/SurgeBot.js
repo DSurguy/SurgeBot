@@ -668,7 +668,8 @@ SurgeBot.prototype.Auth_addUser = function(name, pwd, email){
 
 	var d$insert = Q.defer();
 
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
+	Mongo.connect(connectionString, function (err, db){
 		var collection = db.collection('Users');
 
 		collection.insert([{
@@ -695,7 +696,8 @@ SurgeBot.prototype.Auth_updatePassword = function(name, pwd){
 		d$update = Q.defer();
 
 	//connect to mongo and see if this user exists
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
+	Mongo.connect(connectionString, function (err, db){
 		var collection = db.collection('Users');
 
 		collection.update({name: name}, { $set: 
@@ -792,7 +794,8 @@ SurgeBot.prototype.Auth_handleLogin = function(loginUser, loginPass, from, raw){
 		d$login = Q.defer();
 
 	//connect to mongo and see if this user exists
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
+	Mongo.connect(connectionString, function (err, db){
 		var collection = db.collection('Users');
 
 		collection.find({name: loginUser}).toArray(function (err, docs){
@@ -837,7 +840,8 @@ SurgeBot.prototype.Auth_handleReset = function(resetUser, from, raw){
 		d$reset = Q.defer();
 
 	//connect to mongo and see if this user exists
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
+	Mongo.connect(connectionString, function (err, db){
 		var collection = db.collection('Users');
 
 		collection.find({ name: resetUser}).toArray(function (err, docs){
