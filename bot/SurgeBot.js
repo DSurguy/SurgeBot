@@ -719,7 +719,12 @@ SurgeBot.prototype.Auth_handleRegistration = function(regEmail, regUser, from){
 		d$registration = Q.defer();
 
 	//connect to mongo and see if this user exists
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@ds031942.mongolab.com:31942/surgebot', function (err, db){
+	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
+	Mongo.connect(connectionString, function (err, db){
+		if (!db) {
+			console.log('No mongo connection')
+			return;
+		}
 		var collection = db.collection('Users');
 
 		collection.find({ $or: [{name: regUser}, {email: regEmail}] }).toArray(function (err, docs){
