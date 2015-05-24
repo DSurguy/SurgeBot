@@ -4,9 +4,9 @@ var irc = require('irc'),
 	fs = require('fs'),
     Docs = require('./Docs.js'),
     Q = require('q'),
-    Mongo = require('mongodb'),
     nodemailer = require('nodemailer'),
-    bcrypt = require('bcrypt-nodejs');
+    bcrypt = require('bcrypt-nodejs'),
+    db = require('./Database');
 
 module.exports = SurgeBot;
 
@@ -580,6 +580,7 @@ SurgeBot.prototype.auth = function (from, to, params, raw){
 					bot.client.say(from, 'You are now registered to '+config.irc.nick+' as '+args.codeUser+'! Please auth with !auth <user> <pass> to complete login.');
 				}).catch(function (err){
 					//tell the user there was an error.
+					console.log(err);
 					bot.client.say(from, '\x0304There was an error during registration. \x0301Please see the bot administrator for details.');
 				});
 			}
@@ -665,232 +666,176 @@ SurgeBot.prototype.Auth_generateAuthCode = function(){
 	return authCode.join("");
 };
 SurgeBot.prototype.Auth_addUser = function(name, pwd, email){
+	var user = {
+		name: name,
+		pwd: bcrypt.hashSync(pwd),
+		email: email,
+		currency: 1000
+	};
 
-	var d$insert = Q.defer();
-
-	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
-	Mongo.connect(connectionString, function (err, db){
-		var collection = db.collection('Users');
-
-		collection.insert([{
-			name: name,
-			pwd: bcrypt.hashSync(pwd),
-			email: email,
-			currency: 1000
-		}], function (err, result){
-			if( err ){
-				d$insert.reject(err);
-			}
-			else{
-				d$insert.resolve(result);
-			}
-			db.close();
-		});
-	});
-
-	//return the promise so things can listen for resolves and rejects
-	return d$insert.promise;
+	return db.insert('Users', user);
 };
 SurgeBot.prototype.Auth_updatePassword = function(name, pwd){
 	var bot = this,
-		d$update = Q.defer();
+		deferred = Q.defer();
 
-	//connect to mongo and see if this user exists
-	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
-	Mongo.connect(connectionString, function (err, db){
-		var collection = db.collection('Users');
-
-		collection.update({name: name}, { $set: 
-			{ pwd: bcrypt.hashSync(pwd) }
-		}, function (err, result){
-			if( err ){
-				d$update.reject(err);
-			}
-			else{
-				delete bot.Auth_pendingResets[name];
-				d$update.resolve(result);
-			}
-			db.close();
-		});
+	var doc = { 
+		$set: { 
+			pwd: bcrypt.hashSync(pwd)  
+		}
+	};
+	db.update('Users', {name: name}, doc).then(function(result) {
+		delete bot.Auth_pendingResets[name];
+		deferred.resolve(result);		
+	}).catch(function(err) {
+		deferred.reject(err);
 	});
-	return d$update.promise;
+	
+	return deferred.promise;
 };
 
 SurgeBot.prototype.Auth_handleRegistration = function(regEmail, regUser, from){
 	var bot = this,
 		d$registration = Q.defer();
 
-	//connect to mongo and see if this user exists
-	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
-	Mongo.connect(connectionString, function (err, db){
-		if (!db) {
-			console.log('No mongo connection')
-			return;
+
+	var filter = { $or: [{name: regUser}, {email: regEmail}] };
+	db.find('Users', filter).then(function(docs) {
+		if( docs.length > 0 ){
+			//this user exists, resolve the deferred object with the user data
+			d$registration.reject('User or email already registered.');
 		}
-		var collection = db.collection('Users');
-
-		collection.find({ $or: [{name: regUser}, {email: regEmail}] }).toArray(function (err, docs){
-			if( err ){
-				bot.log('Error during user registration: '+err);
-				d$registration.reject('Error during user lookup, please contact bot administrator for details');
-				db.close();
-				return;
-			}
-			if( docs.length > 0 ){
-				//this user exists, resolve the deferred object with the user data
-				d$registration.reject('User or email already registered.');
-			}
-			else{
-				//this user doesn't exists, start the registration process
-				//check if this is a real email
-				if( (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,4}$/).test(regEmail) ){
-					//generate an auth code for this user
-					var authCode = bot.Auth_generateAuthCode();
-
-					//send the email
-					var emailMsg = ['SurgeBot has received a registration request for the user '+regUser+' from the nick '+from+' on network: '+config.irc.host,
-						'Paste the following command in IRC to whisper your registration code to '+config.irc.nick+'. Replace PASS with a new password.',
-						'',
-						'/msg '+config.irc.nick+' !auth -c '+authCode+' '+regUser+' PASS',
-						'',
-						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
-					bot.mailTransport.sendMail({
-						from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
-						to: regEmail,
-						subject: config.irc.nick+' IRC Registration Confirmation',
-						text: emailMsg.join("\n"),
-						html: '<p>'+emailMsg.join("</p><p>")+'</p>'
-					}, function (err){
-						if( err ){
-							//log and report
-							bot.log('MailError: '+err, 2);
-							d$registration.reject('Unable to send email to '+regEmail);
-						}
-						else{
-							//report success and wait for auth code
-							bot.Auth_pendingRegistrations[regUser] = {
-								code: authCode,
-								email: regEmail,
-								attempts: 0
-							};
-							d$registration.resolve();
-						}
-					});
-				}
-				else{
-					//please enter a real email or password
-					d$registration.reject('Please enter a valid email to register.');
-				}
-			}
-
-			db.close();
-		});
-	});
-	return d$registration.promise;
-};
-
-SurgeBot.prototype.Auth_handleLogin = function(loginUser, loginPass, from, raw){
-	var bot = this,
-		d$login = Q.defer();
-
-	//connect to mongo and see if this user exists
-	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
-	Mongo.connect(connectionString, function (err, db){
-		var collection = db.collection('Users');
-
-		collection.find({name: loginUser}).toArray(function (err, docs){
-			if( err ){
-				bot.log('Error during user registration: '+err);
-				d$login.reject('Error during user lookup, please contact bot administrator for details');
-				db.close();
-				return;
-			}
-			if( docs == undefined ){
-				//user does not exist
-				d$login.reject('Username or password is incorrect. If you need a password reset, use !auth -p.');
-			}
-			else{
-				if( bot.Auth_authedUsers[loginUser] ){
-					d$login.reject('User is already logged in.');
-				}
-				if( bcrypt.compareSync(loginPass, docs[0].pwd) ){
-					//successful new login
-					bot.Auth_authedUsers[loginUser] = {
-						session: raw.user+'@'+raw.host,
-						currency: docs[0].currency
-					};
-
-					d$login.resolve();
-				}
-				else {
-					//pass didn't match somehow
-					d$login.reject('Username or password is incorrect. If you need a password reset, use !auth -p.')
-				}
-			}
-
-			db.close();
-		});
-	});
-
-	return d$login.promise;
-};
-
-SurgeBot.prototype.Auth_handleReset = function(resetUser, from, raw){
-	var bot = this,
-		d$reset = Q.defer();
-
-	//connect to mongo and see if this user exists
-	var connectionString = 'mongodb://'+config.mongo.user+':'+config.mongo.pass+'@' + config.mongo.url;
-	Mongo.connect(connectionString, function (err, db){
-		var collection = db.collection('Users');
-
-		collection.find({ name: resetUser}).toArray(function (err, docs){
-			if( err ){
-				bot.log('Error during password reset request: '+err);
-				d$reset.reject('Error during user lookup, please contact bot administrator for details');
-				db.close();
-				return;
-			}
-			if( docs.length == 0 ){
-				//this user doesn't exist, do nothing, but resolve to obscure user existance
-				d$reset.resolve();
-			}
-			else{
-				//this user exists, send an auth code and add them to pending resets
+		else{
+			//this user doesn't exists, start the registration process
+			//check if this is a real email
+			if( (/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,4}$/).test(regEmail) ){
+				//generate an auth code for this user
 				var authCode = bot.Auth_generateAuthCode();
 
 				//send the email
-				var emailMsg = ['SurgeBot has received a password reset request for the user '+resetUser+' from the nick '+from+' on network: '+config.irc.host,
-					'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'. Replace PASS with a new password.',
+				var emailMsg = ['SurgeBot has received a registration request for the user '+regUser+' from the nick '+from+' on network: '+config.irc.host,
+					'Paste the following command in IRC to whisper your registration code to '+config.irc.nick+'. Replace PASS with a new password.',
 					'',
-					'/msg '+config.irc.nick+' !auth -c '+authCode+' '+resetUser+' PASS',
+					'/msg '+config.irc.nick+' !auth -c '+authCode+' '+regUser+' PASS',
 					'',
 					'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
 				bot.mailTransport.sendMail({
 					from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
-					to: docs[0].email,
-					subject: config.irc.nick+' IRC Password Reset Confirmation',
+					to: regEmail,
+					subject: config.irc.nick+' IRC Registration Confirmation',
 					text: emailMsg.join("\n"),
 					html: '<p>'+emailMsg.join("</p><p>")+'</p>'
 				}, function (err){
 					if( err ){
 						//log and report
 						bot.log('MailError: '+err, 2);
-						d$reset.reject('Unable to send email');
-					}
+						d$registration.reject('Unable to send email to '+regEmail);
+					} 
 					else{
 						//report success and wait for auth code
-						bot.Auth_pendingResets[resetUser] = {
+						bot.Auth_pendingRegistrations[regUser] = {
 							code: authCode,
+							email: regEmail,
 							attempts: 0
 						};
-						d$reset.resolve();
+						d$registration.resolve();
 					}
 				});
 			}
+			else{
+				//please enter a real email or password
+				d$registration.reject('Please enter a valid email to register.');
+			}
+		}
+	}).catch(function(err) {
+		bot.log('Error during user registration: '+err);
+		d$registration.reject('Error during user lookup, please contact bot administrator for details');
+	});
 
-			db.close();
-		});
+	return d$registration.promise;
+};
+
+SurgeBot.prototype.Auth_handleLogin = function(loginUser, loginPass, from, raw){
+	var bot = this;
+	var deferred = Q.defer();
+
+	db.find('Users', {name: loginUser}).then(function(docs) {
+		
+		if( docs == undefined ){
+			//user does not exist
+			deferred.reject('Username or password is incorrect. If you need a password reset, use !auth -p.');
+		} else {
+			if( bot.Auth_authedUsers[loginUser] ){
+				deferred.reject('User is already logged in.');
+			}
+			if( bcrypt.compareSync(loginPass, docs[0].pwd) ){
+				//successful new login
+				bot.Auth_authedUsers[loginUser] = {
+					session: raw.user+'@'+raw.host,
+					currency: docs[0].currency
+				};
+
+				deferred.resolve();
+			} else {
+				//pass didn't match somehow
+				deferreds.reject('Username or password is incorrect. If you need a password reset, use !auth -p.')
+			}
+		}
+	}).catch(function(err) {
+		if( err ){
+			bot.log('Error during user registration: '+err);
+			deferred.reject('Error during user lookup, please contact bot administrator for details');
+			return;
+		}
+	});
+	return deferred.promise;
+};
+
+SurgeBot.prototype.Auth_handleReset = function(resetUser, from, raw){
+	var bot = this,
+		d$reset = Q.defer();
+
+	db.find('Users', { name: resetUser}).then(function() {
+		if( docs.length == 0 ){
+			//this user doesn't exist, do nothing, but resolve to obscure user existance
+			d$reset.resolve();
+		}
+		else{
+			//this user exists, send an auth code and add them to pending resets
+			var authCode = bot.Auth_generateAuthCode();
+
+			//send the email
+			var emailMsg = ['SurgeBot has received a password reset request for the user '+resetUser+' from the nick '+from+' on network: '+config.irc.host,
+				'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'. Replace PASS with a new password.',
+				'',
+				'/msg '+config.irc.nick+' !auth -c '+authCode+' '+resetUser+' PASS',
+				'',
+				'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
+			bot.mailTransport.sendMail({
+				from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
+				to: docs[0].email,
+				subject: config.irc.nick+' IRC Password Reset Confirmation',
+				text: emailMsg.join("\n"),
+				html: '<p>'+emailMsg.join("</p><p>")+'</p>'
+			}, function (err){
+				if( err ){
+					//log and report
+					bot.log('MailError: '+err, 2);
+					d$reset.reject('Unable to send email');
+				}
+				else{
+					//report success and wait for auth code
+					bot.Auth_pendingResets[resetUser] = {
+						code: authCode,
+						attempts: 0
+					};
+					d$reset.resolve();
+				}
+			});
+		}
+	}).catch(function(err) {
+		bot.log('Error during password reset request: '+err);
+		d$reset.reject('Error during user lookup, please contact bot administrator for details');	
 	});
 	return d$reset.promise;
 };
