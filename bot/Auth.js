@@ -313,5 +313,6 @@ var handleReset = function(bot, resetUser, from, raw){
 };
 
 module.exports = {
-	auth: auth
+	auth: auth,
+	authedUsers: authedUsers
 }
