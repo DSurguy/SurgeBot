@@ -10,6 +10,31 @@ function UserService(log){
 	this.schema = {
 		currency: 1000
 	};
+
+	/** 
+	*	Some constants to provide additional human-readability
+	*	when checking errors or status
+	*/
+	LOGIN_USERNOTEXIST: 0,
+	LOGIN_USERACTIVESESSION: 1
+	LOGIN_USERPASSFAIL: 2,
+	REGISTER_USERREGISTERED: 0
+	REGISTER_EMAILERROR: 1,
+	REGISTER_INVALIDEMAIL: 2,
+	REGISTER_INSERTERROR: 3,
+	REGISTER_INVALIDCODE: 4,
+	REGISTER_NOTPENDING: 5,
+	REGISTER_TOOMANYATTEMPTS: 6,
+	RESET_USERNOTEXIST: 0,
+	RESET_EMAILERROR: 1,
+	RESET_NOTPENDING: 2,
+	RESET_INVALIDCODE: 3,
+	RESET_TOOMANYATTEMPTS: 4,
+	STATUS_NOTAUTHED: 0,
+	STATUS_PENDINGREGISTRATION
+	STATUS_AUTHED: 2,
+	STATUS_NORESET: 0,
+	STATUS_PENDINGRESET: 1
 };
 
 UserService.prototype.getUserAuthStatus = function(user){
@@ -33,30 +58,6 @@ UserService.prototype.getUserResetStatus = function(user){
 	}
 };
 
-/** 
-*	Some constants to provide additional human-readability
-*	when checking errors or status
-*/
-UserService.prototype._C = {
-	LOGIN_USERNOTEXIST: 0,
-	LOGIN_USERACTIVESESSION: 1,
-	LOGIN_USERPASSFAIL: 2,
-
-	REGISTER_USERREGISTERED: 0,
-	REGISTER_EMAILERROR: 1,
-	REGISTER_INVALIDEMAIL: 2,
-	REGISTER_INSERTERROR: 3,
-	REGISTER_INVALIDCODE: 4,
-	REGISTER_NOTPENDING: 5,
-
-	STATUS_NOTAUTHED: 0,
-	STATUS_PENDINGREGISTRATION: 1,
-	STATUS_AUTHED: 2,
-
-	STATUS_NORESET: 0,
-	STATUS_PENDINGRESET: 1
-};
-
 UserService.prototype.generateAuthCode = function(){
 	var chars = [0,1,2,3,4,5,6,7,8,9],
 		authCode = [];
@@ -73,7 +74,7 @@ UserService.prototype.generateAuthCode = function(){
 	return authCode.join("");
 };
 
-UserService.prototype.startRegistration = function(user, email, fromNick){
+UserService.prototype.promptRegistration = function(user, email, fromNick){
 	var UserService = this,
 		d$registration = Q.defer();
 
@@ -139,10 +140,10 @@ UserService.prototype.startRegistration = function(user, email, fromNick){
 	});
 	return d$registration.promise;
 };
-UserService.prototype.endRegistration = function(user, pwd, authCode){
+UserService.prototype.attemptRegistration = function(user, pwd, authCode){
 	var UserService = this,
-		pendingUser = UserService._pendingRegistrations[args.codeUser]
-		d$insert = Q.defer();
+		pendingUser = UserService._pendingRegistrations[user],
+		d$update = Q.defer();
 
 	if( pendingUser && pendingUser.code == authCode ){
 		//this user is now registered, add them to the database and prompt for auth
@@ -154,26 +155,35 @@ UserService.prototype.endRegistration = function(user, pwd, authCode){
 			collection.insert([newUser], function (err, result){
 				if( err ){
 					UserService.log(err, 2);
-					d$insert.reject();
+					d$update.reject();
 				}
 				else{
-					d$insert.resolve(result);
+					d$update.resolve(result);
 				}
 				db.close();
 			});
 		});
 	}
 	else if( pendingUser ){
-		//the code didn't match
-		d$insert.reject(4);
+		//the code didn't match, increment the attempts
+		pendingUser.attempts++;
+		if( pendingUser.attempts >= 3 ){
+			//too many attempts. Delete pending reset
+			delete UserService._pendingRegistrations[user];
+			d$update.reject(6);
+		}
+		else{
+			//still attempts left
+			d$update.reject(4);
+		}
 	}
 	else{
 		//user is not pending registration
-		d$insert.reject(5);
+		d$update.reject(5);
 	}
 
 	//return the promise so things can listen for resolves and rejects
-	return d$insert.promise;
+	return d$update.promise;
 };
 
 UserService.prototype.createNewUser = function(user, pwd, email){
@@ -235,6 +245,105 @@ UserService.prototype.login = function(user, pwd, session){
 	return d$login.promise;
 };
 
-UserService.prototype.resetPassword = function(user, newPwd){
+UserService.prototype.promptReset = function(user, fromNick){
+	var UserService = this,
+		d$reset = Q.defer();
 
+	//connect to mongo and see if this user exists
+	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@'+config.mongo.url, function (err, db){
+		var collection = db.collection('Users');
+
+		collection.find({ name: user}).toArray(function (err, docs){
+			if( err ){
+				UserService.log('Error during password reset request: '+err);
+				d$reset.reject(err);
+			}
+			else if( docs.length == 0 ){
+				//this user doesn't exist, do nothing, but resolve to obscure user existance
+				d$reset.reject(0);
+			}
+			else{
+				//this user exists, send an auth code and add them to pending resets
+				var authCode = this.generateAuthCode();
+
+				//send the email
+				var emailMsg = [config.irc.nick+' has received a password reset request for the user '+user+' from the nick '+from+' on network: '+config.irc.host,
+					'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'. Replace PASS with a new password.',
+					'',
+					'/msg '+config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
+					'',
+					'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
+				bot.mailTransport.sendMail({
+					from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
+					to: docs[0].email,
+					subject: config.irc.nick+' IRC Password Reset Confirmation',
+					text: emailMsg.join("\n"),
+					html: '<p>'+emailMsg.join("</p><p>")+'</p>'
+				}, function (err){
+					if( err ){
+						//log and report
+						UserService.log('MailError: '+err, 2);
+						d$reset.reject(1);
+					}
+					else{
+						//report success and wait for auth code
+						this.pendingResets[users] = {
+							code: authCode,
+							attempts: 0
+						};
+						d$reset.resolve();
+					}
+				});
+			}
+
+			db.close();
+		});
+	});
+	return d$reset.promise;
+};
+UserService.prototype.attemptReset = function(user, pwd, authCode){
+	var UserService = this,
+		pendingUser = UserService._pendingReset[user],
+		d$insert = Q.defer();
+
+	if( pendingUser && pendingUser.code == authCode ){
+		//this user is now registered, add them to the database and prompt for auth
+
+		Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@'+config.mongo.url, function (err, db){
+			var collection = db.collection('Users');
+
+			collection.update({name: user}, { $set: 
+				{ pwd: bcrypt.hashSync(pwd) }
+			}, function (err, result){
+				if( err ){
+					d$update.reject(err);
+				}
+				else{
+					delete UserService._pendingReset[user];
+					d$update.resolve(result);
+				}
+				db.close();
+			});
+		});
+	}
+	else if( pendingUser ){
+		//the code didn't match, increment the attempts
+		pendingUser.attempts++;
+		if( pendingUser.attempts >= 3 ){
+			//too many attempts. Delete pending reset
+			delete UserService._pendingReset[user];
+			d$update.reject(4);
+		}
+		else{
+			//still attempts left
+			d$update.reject(3);
+		}
+	}
+	else{
+		//user is not pending registration
+		d$insert.reject(2);
+	}
+
+	//return the promise so things can listen for resolves and rejects
+	return d$insert.promise;
 };
