@@ -1,14 +1,17 @@
-var Clone = require('Clone.js');
+var Clone = require('Clone.js'),
+	Log = require('./Log.js');
 
 module.exports = SurgeBot;
-function SurgeBot(){
+function SurgeBot(config){
 	this.services = {};
 	this.commands = {};
 	this.passives = [];
+	this.client = undefined;
+	this.services['Log'] = new Log(config.log);
 };
 
 SurgeBot.prototype.listen = function(){
-	bot.log("-----\nBot started.", 1);
+	this.services['Log'].log("\nBot started.", 1);
 
 	//create a new IRC client
 	bot.client = new irc.Client(
@@ -37,20 +40,22 @@ SurgeBot.prototype.listen = function(){
 	    	for( var i=0; i<bot.messageHandlers.length; i++ ){
 				if( message.search(bot.passives[i].trigger) !== -1 ){
 					this.passives[i].handler(from, to, message);
-					break;
+					if( bot.config.irc.breakOnPassive ){
+						break;
+					}
 				}
 			}
 	    }
 	});
 
-	bot.client.addListener('error', function(message) {
-	    console.error('IRC error: '+message);
+	bot.client.addListener('error', function (message) {
+	    bot.services['Log'].error('IRC Error: '+message);
 	});
 
 	//attempt to connect to the IRC server
-	bot.log("Attempting to connect to IRC on channels: "+config.irc.channels.join(","), 1);
+	this.services['Log'].log("Attempting to connect to IRC on channels: "+config.irc.channels.join(","), 1);
 	bot.client.connect(1, function(){
-		bot.log("Connection to IRC server successful. Listening for messages.", 1);
+		this.services['Log'].log("Connection to IRC server successful. Listening for messages.", 1);
 	});
 };
 
@@ -71,6 +76,40 @@ SurgeBot.prototype.service = function(label, constructor){
 	}
 };
 
-SurgeBot.prototype.command = function(trigger, constructor, services){
+SurgeBot.prototype.command = function(trigger, constructor, config){
+	//check for name conflict
+	if( this.commands[trigger] ){
+		throw new Error('Conflict on command: !'+trigger);
+	}
+	//make sure that all required services exist
+	if( config.services ){
+		for( var i=0; i<config.services.length; i++ ){
+			if( this.services[config.services[i]] === undefined ){
+				throw new Error('Service name \''+config.services[i]+'\' does not exists but is required by command: !'+trigger);
+				return false;
+			}
+		}
+	}
 
+	//bind the command
+	this.commands[trigger] = new constructor(this.client, this.services, config);
+};
+
+SurgeBot.prototype.passive = function(trigger, constructor, config){
+	//check for name conflict
+	if( this.commands[trigger] ){
+		throw new Error('Conflict on command: !'+trigger);
+	}
+	//make sure that all required services exist
+	if( config.services ){
+		for( var i=0; i<config.services.length; i++ ){
+			if( this.services[config.services[i]] === undefined ){
+				throw new Error('Service name \''+config.services[i]+'\' does not exists but is required by command: !'+trigger);
+				return false;
+			}
+		}
+	}
+
+	//bind the command
+	this.commands[trigger] = new constructor(this.client, this.services, config);
 };

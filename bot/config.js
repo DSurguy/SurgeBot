@@ -28,7 +28,8 @@ if( secret.irc ){
     config.irc = {
         host: secret.irc.host ? secret.irc.host : 'us.quakenet.org',
         nick: secret.irc.nick ? secret.irc.nick : '['+String.fromCharCode(95+Date.now()%10) + ']SurgeBot',
-        channels: secret.irc.channels ? secret.irc.channels : ['#SurgeBot']
+        channels: secret.irc.channels ? secret.irc.channels : ['#SurgeBot'],
+        breakOnPassive: secret.irc.breakOnPassive : secret.irc.breakOnPassive ? true
     }
 }
 else{
@@ -36,7 +37,8 @@ else{
     config.irc = {
         host: 'us.quakenet.org',
         nick: '['+String.fromCharCode(96+Date.now()%10) + ']SurgeBot',
-        channels: ['#SurgeBot']
+        channels: ['#SurgeBot'],
+        breakOnPassive: true
     };
 }
 
@@ -107,20 +109,20 @@ else{
 
 
 /**
-*   DEBUGGING
+*   Logging
 **/
-if( secret.debug ){
-    config.debug = {
-        logLevel: secret.debug.logLevel ? secret.debug.logLevel : 1,
-        console: secret.debug.console ? secret.debug.console : false,
-        logFile: secret.debug.logFile ? secret.debug.logFile : true,
-        logFilePath: secret.debug.logFilePath ? secret.debug.logFilePath : './log/botLog.log',
-        breakOnError: secret.debug.breakOnError ? secret.debug.breakOnError : false
+if( secret.log ){
+    config.log = {
+        logLevel: secret.log.logLevel ? secret.log.logLevel : 1,
+        console: secret.log.console ? secret.log.console : false,
+        logFile: secret.log.logFile ? secret.log.logFile : true,
+        logFilePath: secret.log.logFilePath ? secret.log.logFilePath : './log/botLog.log',
+        breakOnError: secret.log.breakOnError ? secret.log.breakOnError : false
     }
 }
 else{
     //use defaults
-    config.debug = {
+    config.log = {
         logLevel: 1,
         console: false,
         logFile: true,

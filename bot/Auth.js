@@ -1,7 +1,5 @@
-var config = require('./config.js');
-
 module.exports = Auth;
-function Auth(client, log, services){
+function Auth(client, services, config){
 	this.client = client;
 	this.log = log;
 	this.docs = ["\x0311"+"Syntax: !auth [<user> <pass>]|[-r <email> <user>]|[-c <code> <user> <pass>]|[-p user]",
