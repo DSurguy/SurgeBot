@@ -1,5 +1,6 @@
 var config = require('./config.js'),
-	Clone = require('./Clone.js');
+	Clone = require('./Clone.js'),
+	nodemailer = require('nodemailer');
 
 module.exports = UserService;
 function UserService(log){
@@ -15,26 +16,43 @@ function UserService(log){
 	*	Some constants to provide additional human-readability
 	*	when checking errors or status
 	*/
-	LOGIN_USERNOTEXIST: 0,
-	LOGIN_USERACTIVESESSION: 1
-	LOGIN_USERPASSFAIL: 2,
-	REGISTER_USERREGISTERED: 0
-	REGISTER_EMAILERROR: 1,
-	REGISTER_INVALIDEMAIL: 2,
-	REGISTER_INSERTERROR: 3,
-	REGISTER_INVALIDCODE: 4,
-	REGISTER_NOTPENDING: 5,
-	REGISTER_TOOMANYATTEMPTS: 6,
-	RESET_USERNOTEXIST: 0,
-	RESET_EMAILERROR: 1,
-	RESET_NOTPENDING: 2,
-	RESET_INVALIDCODE: 3,
-	RESET_TOOMANYATTEMPTS: 4,
-	STATUS_NOTAUTHED: 0,
-	STATUS_PENDINGREGISTRATION
-	STATUS_AUTHED: 2,
-	STATUS_NORESET: 0,
-	STATUS_PENDINGRESET: 1
+	this.LOGIN_USERNOTEXIST = 0;
+	this.LOGIN_USERACTIVESESSION = 1;
+	this.LOGIN_USERPASSFAIL = 2;
+	this.REGISTER_USERREGISTERED = 0;
+	this.REGISTER_EMAILERROR = 1;
+	this.REGISTER_INVALIDEMAIL = 2;
+	this.REGISTER_INSERTERROR = 3;
+	this.REGISTER_INVALIDCODE = 4;
+	this.REGISTER_NOTPENDING = 5;
+	this.REGISTER_TOOMANYATTEMPTS = 6;
+	this.RESET_USERNOTEXIST = 0;
+	this.RESET_EMAILERROR = 1;
+	this.RESET_NOTPENDING = 2;
+	this.RESET_INVALIDCODE = 3;
+	this.RESET_TOOMANYATTEMPTS = 4;
+	this.STATUS_NOTAUTHED = 0;
+	this.STATUS_PENDINGREGISTRATION = 1;
+	this.STATUS_AUTHED = 2;
+	this.STATUS_NORESET = 0;
+	this.STATUS_PENDINGRESET = 1;
+	this.EMAIL_NOTCONFIGURED = -1;
+
+	if( config.email ){
+		this.mailTransport = nodemailer.createTransport({
+			service: config.email.service,
+			port: config.email.port,
+			host: config.email.host,
+			secure: config.email.secure,
+			auth: {
+				user: config.email.username,
+				pass: config.email.password
+			}
+		});
+	}
+	else{
+		throw new Error('config.email does not exist, users cannot be registered');
+	}
 };
 
 UserService.prototype.getUserAuthStatus = function(user){
@@ -106,8 +124,8 @@ UserService.prototype.promptRegistration = function(user, email, fromNick){
 						'',
 						'/msg '+config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
 						'',
-						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
-					bot.mailTransport.sendMail({
+						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.'];
+					UserService.mailTransport.sendMail({
 						from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
 						to: email,
 						subject: config.irc.nick+' IRC Registration Confirmation',
@@ -273,7 +291,7 @@ UserService.prototype.promptReset = function(user, fromNick){
 					'/msg '+config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
 					'',
 					'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
-				bot.mailTransport.sendMail({
+				UserService.mailTransport.sendMail({
 					from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
 					to: docs[0].email,
 					subject: config.irc.nick+' IRC Password Reset Confirmation',
