@@ -32,9 +32,9 @@ SurgeBot.prototype.listen = function(){
 	//bind a listener for the messages
 	bot.client.addListener('message', function (from, to, message, rawData) {
 		//check for a no-conflict mode command
-	    if( bot.config.irc.noConflictMode && message.search(new RegExp('^\\!'+bot.services['IrcSession'].nick+'\\s+\\!','g') ) == 0){
+	    if( bot.config.irc.noConflictMode && message.search(new RegExp('^\\!'+bot.services['IrcSession'].nick+'\\s+[a-zA-Z0-9]+','g') ) == 0){
 	    	//remove the bot name, space and leading command ! from message
-	    	message = message.slice( ('!'+bot.services['IrcSession'].nick).length+2 );
+	    	message = message.slice( ('!'+bot.services['IrcSession'].nick).length+1 );
 	    	//determine which command has been sent
 	    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
 	    	var command = message.slice(0, cmdEnd);
