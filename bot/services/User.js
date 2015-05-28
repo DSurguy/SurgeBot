@@ -1,4 +1,4 @@
-var Clone = require('./Clone.js'),
+var extend = require('extend'),
 	nodemailer = require('nodemailer'),
 	Mongo = require('mongodb'),
 	Q = require('q'),
@@ -122,16 +122,16 @@ UserService.prototype.promptRegistration = function(user, email, fromNick){
 					var authCode = UserService.generateAuthCode();
 
 					//send the email
-					var emailMsg = [UserService.config.irc.nick+' has received a registration request for the user '+user+' from the nick '+fromNick+' on network: '+UserService.config.irc.host,
-						'Paste the following command in IRC to whisper your registration code to '+UserService.config.irc.nick+'. Replace PASS with a new password.',
+					var emailMsg = [UserService.services['IrcSession'].nick+' has received a registration request for the user '+user+' from the nick '+fromNick+' on network: '+UserService.config.irc.host,
+						'Paste the following command in IRC to whisper your registration code to '+UserService.services['IrcSession'].nick+'. Replace PASS with a new password.',
 						'',
-						'/msg '+UserService.config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
+						'/msg '+UserService.services['IrcSession'].nick+' !auth -c '+authCode+' '+user+' PASS',
 						'',
 						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.'];
 					UserService.mailTransport.sendMail({
-						from: UserService.config.irc.nick+' The IRC Bot <'+UserService.config.email.replyTo+'>',
+						from: UserService.services['IrcSession'].nick+' The IRC Bot <'+UserService.config.email.replyTo+'>',
 						to: email,
-						subject: UserService.config.irc.nick+' IRC Registration Confirmation',
+						subject: UserService.services['IrcSession'].nick+' IRC Registration Confirmation',
 						text: emailMsg.join("\n"),
 						html: '<p>'+emailMsg.join("</p><p>")+'</p>'
 					}, function (err){
@@ -218,7 +218,7 @@ UserService.prototype.attemptRegistration = function(user, pwd, authCode){
 };
 
 UserService.prototype.createNewUser = function(user, pwd, email){
-	var newUser = Clone(this.userSchema);
+	var newUser = extend(true, {}, this.userSchema);
 
 	newUser.name = user;
 	newUser.pwd = bcrypt.hashSync(pwd);
@@ -313,16 +313,16 @@ UserService.prototype.promptReset = function(user, fromNick){
 				var authCode = UserService.generateAuthCode();
 
 				//send the email
-				var emailMsg = [UserService.config.irc.nick+' has received a password reset request for the user '+user+' from the nick '+from+' on network: '+UserService.config.irc.host,
-					'Paste the following command in IRC to whisper your auth code to '+UserService.config.irc.nick+'. Replace PASS with a new password.',
+				var emailMsg = [UserService.services['IrcSession'].nick+' has received a password reset request for the user '+user+' from the nick '+from+' on network: '+UserService.config.irc.host,
+					'Paste the following command in IRC to whisper your auth code to '+UserService.services['IrcSession'].nick+'. Replace PASS with a new password.',
 					'',
-					'/msg '+UserService.config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
+					'/msg '+UserService.services['IrcSession'].nick+' !auth -c '+authCode+' '+user+' PASS',
 					'',
 					'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
 				UserService.mailTransport.sendMail({
-					from: UserService.config.irc.nick+' The IRC Bot <'+UserService.config.email.replyTo+'>',
+					from: UserService.services['IrcSession'].nick+' The IRC Bot <'+UserService.config.email.replyTo+'>',
 					to: docs[0].email,
-					subject: UserService.config.irc.nick+' IRC Password Reset Confirmation',
+					subject: UserService.services['IrcSession'].nick+' IRC Password Reset Confirmation',
 					text: emailMsg.join("\n"),
 					html: '<p>'+emailMsg.join("</p><p>")+'</p>'
 				}, function (err){

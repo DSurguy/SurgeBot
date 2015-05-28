@@ -11,7 +11,7 @@ function Log(logConfig){
 */
 Log.prototype.log = function(message, level){
 	//format this message
-	var logMessage = "\n"+(new Date()).toISOString()+" LOG: "+message;
+	var logMessage = (new Date()).toISOString()+" LOG: "+message;
 
 	//attempt to log this to console
 	if( this.config.console && this.config.logLevel >= level && this.config.logLevel > 0 ){
@@ -26,7 +26,7 @@ Log.prototype.log = function(message, level){
 
 Log.prototype.error = function(error){
 	//format this message
-	var errMessage = "\n"+(new Date()).toISOString()+" ERR: "+error.message;
+	var errMessage = (new Date()).toISOString()+" ERR: "+error.message;
 
 	//attempt to log this to console
 	if( this.config.console && this.config.logLevel > 0 ){

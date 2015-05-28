@@ -1,8 +1,8 @@
 var SurgeBot = require("./SurgeBot.js"),
-	Auth = require('./Auth.js'),
-	User = require('./User.js'),
-	//Roll = require('./Roll.js'),
-	//YouTube = requre('./YouTube.js'),
+	Auth = require('./commands/Auth.js'),
+	User = require('./services/User.js'),
+	Roll = require('./commands/Roll.js'),
+	YouTube = require('./passives/YouTube.js'),
 	Config = require('./config.js');
 
 process.on('uncaughtException', function (err) {
@@ -20,12 +20,14 @@ myBot.service('User', User, {
 	mongo: Config.mongo
 });
 
-//myBot.passive(/youtube\.com\/watch\?v=[A-Za-z0-9_\-]+(\s|$)/, YouTube, 'YouTube');
+myBot.passive('YouTube', YouTube, {
+	googleApi: Config.googleApi
+});
 
 myBot.command('auth', Auth, {
 	services: ['User'],
 	irc: Config.irc
 });
-//myBot.command('roll', Roll);
+myBot.command('roll', Roll);
 
 myBot.listen();

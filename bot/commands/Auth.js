@@ -68,7 +68,7 @@ Auth.prototype.handler = function (from, to, params, raw){
 		if( Auth.services['User'].getUserRegistrationStatus(args.codeUser) == 1 ){
 			//attempt to complete registration
 			Auth.services['User'].attemptRegistration(args.codeUser, args.codePass, args.code).then(function(){
-				Auth.client.say(from, 'You are now registered to '+Auth.config.irc.nick+' as '+args.codeUser+'! Please auth with !auth <user> <pass> to complete login.');
+				Auth.client.say(from, 'You are now registered to '+Auth.services['IrcSession'].nick+' as '+args.codeUser+'! Please auth with !auth <user> <pass> to complete login.');
 			}, function (err){
 				var userMessage = '';
 				switch(err){
@@ -191,5 +191,5 @@ Auth.prototype.doc = function(){
 	    "The -r flag starts the registration process for a new user",
 	    "The -c flag accepts a confirmation code sent in an email as part of the registration process or to reset a password.",
 	    "The -p flag tells the bot to send a password reset code to the user's associated email.",
-	    "\x0307NEVER PASTE YOUR PASSWORD IN A PUBLIC CHANNEL. \x0301Send !auth commands to the bot directly with /msg "+Auth.config.irc.nick+" !auth"];
+	    "\x0307NEVER PASTE YOUR PASSWORD IN A PUBLIC CHANNEL. \x0301Send !auth commands to the bot directly with /msg "+Auth.services['IrcSession'].nick+" !auth"];
 };

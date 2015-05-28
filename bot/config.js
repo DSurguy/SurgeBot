@@ -29,7 +29,8 @@ if( secret.irc ){
         host: secret.irc.host ? secret.irc.host : 'us.quakenet.org',
         nick: secret.irc.nick ? secret.irc.nick : 'SurgeBot',
         channels: secret.irc.channels ? secret.irc.channels : ['#SurgeBot'],
-        breakOnPassive: secret.irc.breakOnPassive ? secret.irc.breakOnPassive : true
+        breakOnPassive: secret.irc.breakOnPassive ? secret.irc.breakOnPassive : true,
+        noConflictMode: secret.irc.noConflictMode ? secret.irc.noConflictMode : true
     }
 }
 else{
@@ -38,7 +39,8 @@ else{
         host: 'us.quakenet.org',
         nick: '['+String.fromCharCode(96+Date.now()%10) + ']SurgeBot',
         channels: ['#SurgeBot'],
-        breakOnPassive: true
+        breakOnPassive: true,
+        noConflictMode: true
     };
 }
 
@@ -73,16 +75,6 @@ if( secret.mongo ){
 else{
     //Don't initialize DB
     config.mongo = undefined;
-}
-
-/**
-*   ADMIN LIST CONFIG
-**/
-if( secret.adminList ){
-    config.adminList = secret.adminList ? secret.adminList : {};
-}
-else{
-    config.adminList = {};
 }
 
 /**
