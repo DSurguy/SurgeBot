@@ -60,7 +60,7 @@ SurgeBot.prototype.listen = function(){
 	    	}
 	    }
 	    //check for a regular command
-	    else if( message[0] == '!' ){
+	    else if( !bot.config.irc.noConflictMode && message[0] == '!' ){
 	    	//determine which command has been sent
 	    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
 	    	var command = message.slice(1, cmdEnd);
@@ -71,7 +71,8 @@ SurgeBot.prototype.listen = function(){
 	    		bot.commands[command].handler(from, to, message.slice(cmdEnd+1), rawData);
 	    	}
 	    }
-	    else{
+	    //now run passives if the message didn't come from the bot
+	    else if( from !== bot.services['IrcSession'].nick ){
 	    	bot.services['Log'].log('Testing passive triggers on message: '+message, 3);
 	    	//run through the passives
 	    	for( var label in bot.passives ){
