@@ -107,7 +107,7 @@ if( secret.log ){
     config.log = {
         logLevel: secret.log.logLevel ? secret.log.logLevel : 1,
         console: secret.log.console ? secret.log.console : false,
-        logFile: secret.log.logFile ? secret.log.logFile : true,
+        logFile: secret.log.logFile ? secret.log.logFile : false,
         logFilePath: secret.log.logFilePath ? secret.log.logFilePath : './log/botLog.log',
         breakOnError: secret.log.breakOnError ? secret.log.breakOnError : false
     }
@@ -117,7 +117,7 @@ else{
     config.log = {
         logLevel: 1,
         console: false,
-        logFile: true,
+        logFile: false,
         logFilePath: './log/botLog.log',
         breakOnError: false
     }
