@@ -1,3 +1,5 @@
+var fs = require('fs');
+
 module.exports = Log;
 
 function Log(logConfig){
@@ -22,18 +24,18 @@ Log.prototype.log = function(message, level){
 	}
 };
 
-Log.prototype.error = function(message){
+Log.prototype.error = function(error){
 	//format this message
-	var errMessage = "\n"+(new Date()).toISOString()+" ERR: "+message;
+	var errMessage = "\n"+(new Date()).toISOString()+" ERR: "+error.message;
 
 	//attempt to log this to console
 	if( this.config.console && this.config.logLevel > 0 ){
-		console.error(errMessage);
+		console.trace(error);
 	}
 
 	//attempt to log to file
 	if( this.config.logFile && this.config.logLevel > 0 ){
-		this.addToLogFileQueue(errMessage);
+		this.addToLogFileQueue(error.stack);
 	}
 
 	//see if we should die on error

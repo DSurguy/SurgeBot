@@ -1,24 +1,10 @@
+var Q = require('q');
+
 module.exports = Auth;
 function Auth(client, services, config){
 	this.client = client;
-	this.log = log;
-	this.docs = ["\x0311"+"Syntax: !auth [<user> <pass>]|[-r <email> <user>]|[-c <code> <user> <pass>]|[-p user]",
-	    "This command can be used to register a username, with an associated email and password. Some secure ! commands require a user to be registered.",
-	    "The base command of !auth <user> <pass> will attempt to login the user, provided they are registered.",
-	    "The -r flag starts the registration process for a new user",
-	    "The -c flag accepts a confirmation code sent in an email as part of the registration process or to reset a password.",
-	    "The -p flag tells the bot to send a password reset code to the user's associated email.",
-	    "\x0307NEVER PASTE YOUR PASSWORD IN A PUBLIC CHANNEL. \x0301Send !auth commands to the bot directly with /msg "+config.irc.nick+" !auth"];
-
-    //check for required service
-    if( services['User'] === undefined ){
-    	//fail out
-    	throw new Error('Auth module requires User service, service not found.');
-    	return {};
-    }
-    else{
-    	this.services = services;
-    }
+    this.services = services;
+    this.config = config;
 };
 
 //!auth [-r <email> <user>]|[-c <code> <user> <pass>]|[<user> <pass>]|[-p user]
@@ -68,6 +54,8 @@ Auth.prototype.handler = function (from, to, params, raw){
 				break;
 			}
 			Auth.client.say(from, '\x0304-e- Error during registration: '+userMessage+'. Please contact bot administrator for details.');
+		}).catch( function (error){
+			Auth.services['Log'].error(error);
 		});
 	}
 	else if( args.regFlag ){
@@ -76,10 +64,11 @@ Auth.prototype.handler = function (from, to, params, raw){
 	}
 	//Auth Code
 	else if( args.code && args.codeUser && args.codePass ){
+		Auth.services['Log'].log('Auth.handler -c: Starting handler.',4);
 		if( Auth.services['User'].getUserRegistrationStatus(args.codeUser) == 1 ){
 			//attempt to complete registration
 			Auth.services['User'].attemptRegistration(args.codeUser, args.codePass, args.code).then(function(){
-				Auth.client.say(from, 'You are now registered to '+config.irc.nick+' as '+args.codeUser+'! Please auth with !auth <user> <pass> to complete login.');
+				Auth.client.say(from, 'You are now registered to '+Auth.config.irc.nick+' as '+args.codeUser+'! Please auth with !auth <user> <pass> to complete login.');
 			}, function (err){
 				var userMessage = '';
 				switch(err){
@@ -97,6 +86,8 @@ Auth.prototype.handler = function (from, to, params, raw){
 					break;
 				}
 				Auth.client.say(from, '\x0304-e- Error during registration: '+userMessage+'. Please contact bot administrator for details.');
+			}).catch( function (error){
+				Auth.services['Log'].error(error);
 			});
 		}
 		else if( Auth.services['User'].getUserResetStatus(args.codeUser) == 1 ){
@@ -120,7 +111,12 @@ Auth.prototype.handler = function (from, to, params, raw){
 					break;
 				}
 				Auth.client.say(from, '\x0304-e- Error during password reset: '+userMessage+'. Please contact bot administrator for details.');
+			}).catch( function (error){
+				Auth.services['Log'].error(error);
 			});
+		}
+		else{
+			Auth.services['Log'].log('Auth.handler -c: User not pending.',4);
 		}
 	}
 	else if( args.codeFlag ){
@@ -147,6 +143,8 @@ Auth.prototype.handler = function (from, to, params, raw){
 				break;
 			}
 			Auth.client.say(from, '\x0304-e- Error during password reset: '+userMessage+'. Please contact bot administrator for details.');
+		}).catch( function (error){
+			Auth.services['Log'].error(error);
 		});
 	}
 	else if( args.resetFlag ){
@@ -156,6 +154,7 @@ Auth.prototype.handler = function (from, to, params, raw){
 	//Login
 	else if( args.user && args.pass ){
 		Auth.services['User'].login(args.user, args.pass, raw.user+'@'+raw.host).then(function(){
+			Auth.services['Log'].log('Auth.handler -login: Auth Success, responding to '+from, 4);
 			Auth.client.say(from, '\x0303You are now logged in as '+args.user+'.');
 		}, function (err){
 			var userMessage = '';
@@ -174,10 +173,23 @@ Auth.prototype.handler = function (from, to, params, raw){
 				break;
 			}
 			Auth.client.say(from, '\x0304-e- Error during login: '+userMessage+'. Please contact bot administrator for details.');
+		}).catch( function (error){
+			Auth.services['Log'].error(error);
 		});
 	}
 	else {
 		//malformed request. Prompt help
 		Auth.client.say(from, 'Malformed !auth. Expected !auth [-r <email> <user>]|[-c <code> <user> <pass>]|[<user> <pass>]|[-p user]. See \x0314!help auth \x0301for details.');
 	}
+};
+
+Auth.prototype.doc = function(){
+	var Auth = this;
+	return ["\x0311"+"Syntax: !auth [<user> <pass>]|[-r <email> <user>]|[-c <code> <user> <pass>]|[-p user]",
+	    "This command can be used to register a username, with an associated email and password. Some secure ! commands require a user to be registered.",
+	    "The base command of !auth <user> <pass> will attempt to login the user, provided they are registered.",
+	    "The -r flag starts the registration process for a new user",
+	    "The -c flag accepts a confirmation code sent in an email as part of the registration process or to reset a password.",
+	    "The -p flag tells the bot to send a password reset code to the user's associated email.",
+	    "\x0307NEVER PASTE YOUR PASSWORD IN A PUBLIC CHANNEL. \x0301Send !auth commands to the bot directly with /msg "+Auth.config.irc.nick+" !auth"];
 };

@@ -27,9 +27,9 @@ if( secret.irc ){
     //pull from secret data and fallback to defaults
     config.irc = {
         host: secret.irc.host ? secret.irc.host : 'us.quakenet.org',
-        nick: secret.irc.nick ? secret.irc.nick : '['+String.fromCharCode(95+Date.now()%10) + ']SurgeBot',
+        nick: secret.irc.nick ? secret.irc.nick : 'SurgeBot',
         channels: secret.irc.channels ? secret.irc.channels : ['#SurgeBot'],
-        breakOnPassive: secret.irc.breakOnPassive : secret.irc.breakOnPassive ? true
+        breakOnPassive: secret.irc.breakOnPassive ? secret.irc.breakOnPassive : true
     }
 }
 else{

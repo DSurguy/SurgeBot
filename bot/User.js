@@ -1,16 +1,19 @@
-var config = require('./config.js'),
-	Clone = require('./Clone.js'),
-	nodemailer = require('nodemailer');
+var Clone = require('./Clone.js'),
+	nodemailer = require('nodemailer'),
+	Mongo = require('mongodb'),
+	Q = require('q'),
+	bcrypt = require('bcrypt-nodejs');
 
 module.exports = UserService;
-function UserService(log){
+function UserService(services, config){
 	this._activeUsers = {};
 	this._pendingReset = {};
-	this._pendingRegistration = {};
-	this.log = log;
-	this.schema = {
+	this._pendingRegistrations = {};
+	this.services = services;
+	this.userSchema = {
 		currency: 1000
 	};
+	this.config = config;
 
 	/** 
 	*	Some constants to provide additional human-readability
@@ -55,11 +58,11 @@ function UserService(log){
 	}
 };
 
-UserService.prototype.getUserAuthStatus = function(user){
+UserService.prototype.getUserRegistrationStatus = function(user){
 	if( this._activeUsers[user] ){
 		return 2;
 	}
-	else if( this._pendingRegistration[user] ){
+	else if( this._pendingRegistrations[user] ){
 		return 1;
 	}
 	else {
@@ -97,12 +100,12 @@ UserService.prototype.promptRegistration = function(user, email, fromNick){
 		d$registration = Q.defer();
 
 	//connect to mongo and see if this user exists
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@'+config.mongo.url, function (err, db){
+	Mongo.connect('mongodb://'+UserService.config.mongo.user+':'+UserService.config.mongo.pass+'@'+UserService.config.mongo.url, function (err, db){
 		var collection = db.collection('Users');
 
 		collection.find({ $or: [{name: user}, {email: email}] }).toArray(function (err, docs){
 			if( err ){
-				UserService.log(err, 2);
+				UserService.services['Log'].error(err, 2);
 				d$registration.reject(err);
 				db.close();
 				return;
@@ -119,26 +122,26 @@ UserService.prototype.promptRegistration = function(user, email, fromNick){
 					var authCode = UserService.generateAuthCode();
 
 					//send the email
-					var emailMsg = [config.irc.nick+' has received a registration request for the user '+user+' from the nick '+fromNick+' on network: '+config.irc.host,
-						'Paste the following command in IRC to whisper your registration code to '+config.irc.nick+'. Replace PASS with a new password.',
+					var emailMsg = [UserService.config.irc.nick+' has received a registration request for the user '+user+' from the nick '+fromNick+' on network: '+UserService.config.irc.host,
+						'Paste the following command in IRC to whisper your registration code to '+UserService.config.irc.nick+'. Replace PASS with a new password.',
 						'',
-						'/msg '+config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
+						'/msg '+UserService.config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
 						'',
 						'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.'];
 					UserService.mailTransport.sendMail({
-						from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
+						from: UserService.config.irc.nick+' The IRC Bot <'+UserService.config.email.replyTo+'>',
 						to: email,
-						subject: config.irc.nick+' IRC Registration Confirmation',
+						subject: UserService.config.irc.nick+' IRC Registration Confirmation',
 						text: emailMsg.join("\n"),
 						html: '<p>'+emailMsg.join("</p><p>")+'</p>'
 					}, function (err){
 						if( err ){
-							UserService.log(err, 2);
+							UserService.services['Log'].error(err, 2);
 							d$registration.reject(1);
 						}
 						else{
 							//report success and wait for auth code
-							this._pendingRegistrations[user] = {
+							UserService._pendingRegistrations[user] = {
 								code: authCode,
 								email: email,
 								attempts: 0
@@ -163,19 +166,25 @@ UserService.prototype.attemptRegistration = function(user, pwd, authCode){
 		pendingUser = UserService._pendingRegistrations[user],
 		d$update = Q.defer();
 
-	if( pendingUser && pendingUser.code == authCode ){
-		//this user is now registered, add them to the database and prompt for auth
-		var newUser = UserService._createNewUser(user, pwd, pendingUser.email);
+	UserService.services['Log'].log('UserService.attemptRegistration: starting. '+JSON.stringify(arguments), 4);
 
-		Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@'+config.mongo.url, function (err, db){
+	if( pendingUser && pendingUser.code == authCode ){
+		UserService.services['Log'].log('UserService.attemptRegistration: User pending and matched code. ', 4);
+		//this user is now registered, add them to the database and prompt for auth
+		var newUser = UserService.createNewUser(user, pwd, pendingUser.email);
+
+		Mongo.connect('mongodb://'+UserService.config.mongo.user+':'+UserService.config.mongo.pass+'@'+UserService.config.mongo.url, function (err, db){
+			UserService.services['Log'].log('UserService.attemptRegistration: Connected to mongo. ', 4);
 			var collection = db.collection('Users');
 
 			collection.insert([newUser], function (err, result){
+				UserService.services['Log'].log('UserService.attemptRegistration: Completed db insert. ', 4);
 				if( err ){
-					UserService.log(err, 2);
+					UserService.services['Log'].error(err, 2);
 					d$update.reject();
 				}
 				else{
+					UserService.services['Log'].log('UserService.attemptRegistration: Successfully registered user, resolving. ', 4);
 					d$update.resolve(result);
 				}
 				db.close();
@@ -183,20 +192,24 @@ UserService.prototype.attemptRegistration = function(user, pwd, authCode){
 		});
 	}
 	else if( pendingUser ){
+		UserService.services['Log'].log('UserService.attemptRegistration: User pending but didn\'t match code. ', 4);
 		//the code didn't match, increment the attempts
 		pendingUser.attempts++;
 		if( pendingUser.attempts >= 3 ){
+			UserService.services['Log'].log('UserService.attemptRegistration: Too many auth attempts, deleting and rejecting. ', 4);
 			//too many attempts. Delete pending reset
 			delete UserService._pendingRegistrations[user];
 			d$update.reject(6);
 		}
 		else{
 			//still attempts left
+			UserService.services['Log'].log('UserService.attemptRegistration: Pending, but didn\'t match code, rejecting. ', 4);
 			d$update.reject(4);
 		}
 	}
 	else{
 		//user is not pending registration
+		UserService.services['Log'].log('UserService.attemptRegistration: User not pending, rejecting. ', 4);
 		d$update.reject(5);
 	}
 
@@ -205,7 +218,7 @@ UserService.prototype.attemptRegistration = function(user, pwd, authCode){
 };
 
 UserService.prototype.createNewUser = function(user, pwd, email){
-	var newUser = Clone(this.addlUserSchema);
+	var newUser = Clone(this.userSchema);
 
 	newUser.name = user;
 	newUser.pwd = bcrypt.hashSync(pwd);
@@ -215,43 +228,58 @@ UserService.prototype.createNewUser = function(user, pwd, email){
 };
 
 UserService.prototype.login = function(user, pwd, session){
-	var userService = this,
+	var UserService = this,
 		d$login = Q.defer();
 
+	UserService.services['Log'].log('UserService.login: starting. '+JSON.stringify(arguments), 4);
+
 	//connect to mongo and see if this user exists
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@'+config.mongo.url, function (err, db){
+	Mongo.connect('mongodb://'+UserService.config.mongo.user+':'+UserService.config.mongo.pass+'@'+UserService.config.mongo.url, function (err, db){
+		if( err ){
+			UserService.services['Log'].log(err, 2);
+			d$login.reject(err);
+			db.close();
+			return;
+		}
+		UserService.services['Log'].log('UserService.login: connected to mongo', 4);
 		var collection = db.collection('Users');
 
 		collection.find({name: user}).toArray(function (err, docs){
 			if( err ){
-				UserService.log(err, 2);
+				UserService.services['Log'].log(err, 2);
 				d$login.reject(err);
 				db.close();
 				return;
 			}
+			UserService.services['Log'].log('UserService.login: Completed find on collection.', 4);
 			if( docs == undefined ){
 				//user does not exist
+				UserService.services['Log'].log('UserService.login: User does not exist, rejecting.', 4);
 				d$login.reject(0);
 			}
 			else{
-				if( userService.activeUsers[user] ){
+				if( UserService._activeUsers[user] ){
+					UserService.services['Log'].log('UserService.login: User already logged in, rejecting.', 4);
 					d$login.reject(1);
 				}
-				if( bcrypt.compareSync(loginPass, docs[0].pwd) ){
+				if( bcrypt.compareSync(pwd, docs[0].pwd) ){
 					//successful new login, pull down user data
-					userService.activeUsers[user] = {
+					UserService.services['Log'].log('UserService.login: Auth success, adding user session.', 4);
+					UserService._activeUsers[user] = {
 						session: session
 					};
 					for( var prop in docs[0] ){
-						if( docs[0].hasOwnProperty(prop) && ['pwd', '_id', 'session'].search(prop) == -1 ){
-							userService.activeUsers[user][prop] = docs[0][prop];
+						if( docs[0].hasOwnProperty(prop) && ['pwd', '_id', 'session'].indexOf(prop) == -1 ){
+							UserService._activeUsers[user][prop] = docs[0][prop];
 						}
 					}
 
+					UserService.services['Log'].log('UserService.login: User added to session, resolving.', 4);
 					d$login.resolve();
 				}
 				else {
 					//pass didn't match somehow
+					UserService.services['Log'].log('UserService.login: Password incorrect, rejecting.', 4);
 					d$login.reject(2);
 				}
 			}
@@ -268,12 +296,12 @@ UserService.prototype.promptReset = function(user, fromNick){
 		d$reset = Q.defer();
 
 	//connect to mongo and see if this user exists
-	Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@'+config.mongo.url, function (err, db){
+	Mongo.connect('mongodb://'+UserService.config.mongo.user+':'+UserService.config.mongo.pass+'@'+UserService.config.mongo.url, function (err, db){
 		var collection = db.collection('Users');
 
 		collection.find({ name: user}).toArray(function (err, docs){
 			if( err ){
-				UserService.log('Error during password reset request: '+err);
+				UserService.services['Log'].error('Error during password reset request: '+err);
 				d$reset.reject(err);
 			}
 			else if( docs.length == 0 ){
@@ -282,30 +310,30 @@ UserService.prototype.promptReset = function(user, fromNick){
 			}
 			else{
 				//this user exists, send an auth code and add them to pending resets
-				var authCode = this.generateAuthCode();
+				var authCode = UserService.generateAuthCode();
 
 				//send the email
-				var emailMsg = [config.irc.nick+' has received a password reset request for the user '+user+' from the nick '+from+' on network: '+config.irc.host,
-					'Paste the following command in IRC to whisper your auth code to '+config.irc.nick+'. Replace PASS with a new password.',
+				var emailMsg = [UserService.config.irc.nick+' has received a password reset request for the user '+user+' from the nick '+from+' on network: '+UserService.config.irc.host,
+					'Paste the following command in IRC to whisper your auth code to '+UserService.config.irc.nick+'. Replace PASS with a new password.',
 					'',
-					'/msg '+config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
+					'/msg '+UserService.config.irc.nick+' !auth -c '+authCode+' '+user+' PASS',
 					'',
 					'If you experience problems, please contact your channel\'s bot administrator. Replies to this email will be ignored.']
 				UserService.mailTransport.sendMail({
-					from: config.irc.nick+' The IRC Bot <'+config.email.replyTo+'>',
+					from: UserService.config.irc.nick+' The IRC Bot <'+UserService.config.email.replyTo+'>',
 					to: docs[0].email,
-					subject: config.irc.nick+' IRC Password Reset Confirmation',
+					subject: UserService.config.irc.nick+' IRC Password Reset Confirmation',
 					text: emailMsg.join("\n"),
 					html: '<p>'+emailMsg.join("</p><p>")+'</p>'
 				}, function (err){
 					if( err ){
 						//log and report
-						UserService.log('MailError: '+err, 2);
+						UserService.services['Log'].error('MailError: '+err, 2);
 						d$reset.reject(1);
 					}
 					else{
 						//report success and wait for auth code
-						this.pendingResets[users] = {
+						UserService._pendingResets[users] = {
 							code: authCode,
 							attempts: 0
 						};
@@ -327,7 +355,7 @@ UserService.prototype.attemptReset = function(user, pwd, authCode){
 	if( pendingUser && pendingUser.code == authCode ){
 		//this user is now registered, add them to the database and prompt for auth
 
-		Mongo.connect('mongodb://'+config.mongo.user+':'+config.mongo.pass+'@'+config.mongo.url, function (err, db){
+		Mongo.connect('mongodb://'+UserService.config.mongo.user+':'+UserService.config.mongo.pass+'@'+UserService.config.mongo.url, function (err, db){
 			var collection = db.collection('Users');
 
 			collection.update({name: user}, { $set: 
