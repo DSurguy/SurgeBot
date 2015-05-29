@@ -10,6 +10,7 @@ function SurgeBot(config){
 	this.services = {};
 	this.commands = {};
 	this.passives = {};
+	this.middlewares = [];
 	this.config = config;
 	this.client = new irc.Client(
 		this.config.irc.host, 
@@ -31,60 +32,88 @@ SurgeBot.prototype.listen = function(){
 
 	//bind a listener for the messages
 	bot.client.addListener('message', function (from, to, message, rawData) {
-		//check for a no-conflict mode command
-	    if( bot.config.irc.noConflictMode && message.search(new RegExp('^\\!'+bot.services['IrcSession'].nick+'\\s+[a-zA-Z0-9]+','g') ) == 0){
-	    	//remove the bot name, space and leading command ! from message
-	    	message = message.slice( ('!'+bot.services['IrcSession'].nick).length+1 );
-	    	//determine which command has been sent
-	    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
-	    	var command = message.slice(0, cmdEnd);
-	    	//check to see if we're handling the command
-	    	if( bot.commands[command] ){
-	    		//this is a command we can handle, parse it!
-	    		bot.services['Log'].log('Handling command in -noConflictMode: \''+command+'\' with params: '+message.slice(cmdEnd+1), 3);
-	    		bot.commands[command].handler(from, to, message.slice(cmdEnd+1), rawData);
-	    	}
-	    }
-	    //check to see if we were sent a message privately in noConflictMode
-	    else if( bot.config.irc.noConflictMode
-	    && to == bot.services['IrcSession'].nick
-	    && message[0] == '!' ){
-	    	//determine which command has been sent
-	    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
-	    	var command = message.slice(1, cmdEnd);
-	    	//check to see if we're handling the command
-	    	if( bot.commands[command] ){
-	    		//this is a command we can handle, parse it!
-	    		bot.services['Log'].log('Handling command in -noConflictMode -privateMsg: \''+command+'\' with params: '+message.slice(cmdEnd+1), 3);
-	    		bot.commands[command].handler(from, to, message.slice(cmdEnd+1), rawData);
-	    	}
-	    }
-	    //check for a regular command
-	    else if( !bot.config.irc.noConflictMode && message[0] == '!' ){
-	    	//determine which command has been sent
-	    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
-	    	var command = message.slice(1, cmdEnd);
-	    	//check to see if we're handling the command
-	    	if( bot.commands[command] ){
-	    		//this is a command we can handle, parse it!
-	    		bot.services['Log'].log('Handling command: \''+command+'\' with params: '+message.slice(cmdEnd+1), 3);
-	    		bot.commands[command].handler(from, to, message.slice(cmdEnd+1), rawData);
-	    	}
-	    }
-	    //now run passives if the message didn't come from the bot
-	    else if( from !== bot.services['IrcSession'].nick ){
-	    	bot.services['Log'].log('Testing passive triggers on message: '+message, 3);
-	    	//run through the passives
-	    	for( var label in bot.passives ){
-				if( bot.passives.hasOwnProperty(label) && bot.passives[label].trigger(from, to, message, rawData) ){
-					bot.services['Log'].log('Running passive handler: \''+label+'\' on message: '+message, 3);
-					bot.passives[label].handler(from, to, message, rawData);
-					if( bot.config.irc.breakOnPassive ){
-						break;
+
+		var messageData = {
+			from: from,
+			to: to,
+			message: message,
+			rawData: rawData
+		};
+		bot.services['Log'].log('Starting middleware.',4);
+		(function runMiddle(messageData, middlewares, services, index, complete){
+			if( middlewares.length == 0 ){
+				complete(messageData);
+			}
+			else{
+				Q.when( middlewares[index].handler(messageData) ).then( function(){
+					services['Log'].log('Ran some middleware at index: '+index+', continuing',4);
+					if( index == middlewares.length-1 ){
+						complete(messageData);
+					}
+					else{
+						runMiddle(messageData, middlewares, services, index+1, complete);
+					}
+				}).catch( function (e){
+					services['Log'].error( new Error('Error processing middlewares: '+e.message));
+				});
+			}
+		})(messageData, bot.middlewares, bot.services, 0, function (messageData){
+
+			//check for a no-conflict mode command
+		    if( bot.config.irc.noConflictMode && message.search(new RegExp('^\\!'+bot.services['IrcSession'].nick+'\\s+[a-zA-Z0-9]+','g') ) == 0){
+		    	//remove the bot name, space and leading command ! from message
+		    	message = message.slice( ('!'+bot.services['IrcSession'].nick).length+1 );
+		    	//determine which command has been sent
+		    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
+		    	var command = message.slice(0, cmdEnd);
+		    	//check to see if we're handling the command
+		    	if( bot.commands[command] ){
+		    		//this is a command we can handle, parse it!
+		    		bot.services['Log'].log('Handling command in -noConflictMode: \''+command+'\' with params: '+message.slice(cmdEnd+1), 3);
+		    		bot.commands[command].handler(from, to, message.slice(cmdEnd+1), rawData);
+		    	}
+		    }
+		    //check to see if we were sent a message privately in noConflictMode
+		    else if( bot.config.irc.noConflictMode
+		    && to == bot.services['IrcSession'].nick
+		    && message[0] == '!' ){
+		    	//determine which command has been sent
+		    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
+		    	var command = message.slice(1, cmdEnd);
+		    	//check to see if we're handling the command
+		    	if( bot.commands[command] ){
+		    		//this is a command we can handle, parse it!
+		    		bot.services['Log'].log('Handling command in -noConflictMode -privateMsg: \''+command+'\' with params: '+message.slice(cmdEnd+1), 3);
+		    		bot.commands[command].handler(from, to, message.slice(cmdEnd+1), rawData);
+		    	}
+		    }
+		    //check for a regular command
+		    else if( !bot.config.irc.noConflictMode && message[0] == '!' ){
+		    	//determine which command has been sent
+		    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
+		    	var command = message.slice(1, cmdEnd);
+		    	//check to see if we're handling the command
+		    	if( bot.commands[command] ){
+		    		//this is a command we can handle, parse it!
+		    		bot.services['Log'].log('Handling command: \''+command+'\' with params: '+message.slice(cmdEnd+1), 3);
+		    		bot.commands[command].handler(from, to, message.slice(cmdEnd+1), rawData);
+		    	}
+		    }
+		    //now run passives if the message didn't come from the bot
+		    else if( from !== bot.services['IrcSession'].nick ){
+		    	bot.services['Log'].log('Testing passive triggers on message: '+message, 3);
+		    	//run through the passives
+		    	for( var label in bot.passives ){
+					if( bot.passives.hasOwnProperty(label) && bot.passives[label].trigger(from, to, message, rawData) ){
+						bot.services['Log'].log('Running passive handler: \''+label+'\' on message: '+message, 3);
+						bot.passives[label].handler(from, to, message, rawData);
+						if( bot.config.irc.breakOnPassive ){
+							break;
+						}
 					}
 				}
-			}
-	    }
+		    }
+		});
 	});
 
 	bot.client.addListener('error', function (message) {
@@ -212,13 +241,13 @@ SurgeBot.prototype.passive = function(label, constructor, config){
 
 	//check for name conflict
 	if( bot.passives[label] ){
-		bot.services['Log'].error(new Error('Conflict on passive handler: !'+trigger));
+		bot.services['Log'].error(new Error('Conflict on passive handler: !'+label));
 	}
 	//make sure that all required services exist
 	if( config.services ){
 		for( var i=0; i<config.services.length; i++ ){
 			if( bot.services[config.services[i]] === undefined ){
-				bot.services['Log'].error(new Error('Service name \''+config.services[i]+'\' does not exists but is required by passive handler: !'+trigger));
+				bot.services['Log'].error(new Error('Service name \''+config.services[i]+'\' does not exists but is required by passive handler: !'+label));
 				return false;
 			}
 		}
@@ -256,5 +285,55 @@ SurgeBot.prototype.passive = function(label, constructor, config){
 	}
 	else if( bot.passives[label].doc ){
 		bot.services['Log'].error(new Error('Passive handler \''+label+'\' attempted to add a doc, but did not provide a doc function.'));
+	}
+};
+
+SurgeBot.prototype.middleware = function(label, constructor, config){
+	var bot = this;
+	if( config === undefined ){ config = {}; }
+
+	//make sure that all required services exist
+	if( config.services ){
+		for( var i=0; i<config.services.length; i++ ){
+			if( bot.services[config.services[i]] === undefined ){
+				bot.services['Log'].error(new Error('Service name \''+config.services[i]+'\' does not exists but is required by middleware: !'+label));
+				return false;
+			}
+		}
+	}
+
+	//bind the passive
+	var newMiddle = new constructor(bot.client, bot.services, config);
+	bot.middlewares.push( newMiddle );
+
+	bot.services['Log'].log('Successfully bound middleware: '+label, 2);
+
+	//attempt to add a doc to help if available.
+	//execute the command's doc function if available
+	if( typeof newMiddle.doc == "function" ){
+		//add the doc if it returns an array of strings.
+		var docResult = newMiddle.doc();
+		if( docResult.constructor.name == 'Array' ){
+			var allStrings = true;
+			for( var i=0; i<docResult.length; i++ ){
+				if( typeof docResult[i] !== 'string' ){
+					allStrings = false;
+					break;
+				}
+			}
+			if( allStrings ){
+				//this doc is formatted correctly, add it!
+				bot.services['Docs'].addMiddlewareDoc(label, docResult);
+			}
+			else{
+				bot.services['Log'].error(new Error('Middleware \''+label+'\' attempted to add a doc, but the doc array was not entirely strings.'));
+			}
+		}
+		else{
+			bot.services['Log'].error(new Error('Middleware \''+label+'\' attempted to add a doc, but did not return an array from the doc function.'));
+		}
+	}
+	else if( newMiddle.doc ){
+		bot.services['Log'].error(new Error('Middleware \''+label+'\' attempted to add a doc, but did not provide a doc function.'));
 	}
 };

@@ -3,6 +3,7 @@ var SurgeBot = require("./SurgeBot.js"),
 	User = require('./services/User.js'),
 	Roll = require('./commands/Roll.js'),
 	YouTube = require('./passives/YouTube.js'),
+	MiddleTest = require('./middleware/MiddleTest.js'),
 	Config = require('./config.js');
 
 process.on('uncaughtException', function (err) {
@@ -19,6 +20,9 @@ myBot.service('User', User, {
 	email: Config.email,
 	mongo: Config.mongo
 });
+
+myBot.middleware('MiddleTest', MiddleTest);
+myBot.middleware('MiddleTest2', MiddleTest);
 
 myBot.passive('YouTube', YouTube, {
 	googleApi: Config.googleApi
