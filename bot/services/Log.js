@@ -1,9 +1,17 @@
-var fs = require('fs');
+var fs = require('fs'),
+	extend = require('extend');
 
 module.exports = Log;
 
 function Log(logConfig){
-	this.config = logConfig;
+	//this.config = logConfig;
+	this.config = extend(true, {
+		logLevel: 2,
+		console: true,
+		logFile: false,
+		logFilePath: process.cwd()+'/log/botLog.log',
+		breakOnError: true
+	}, logConfig?logConfig:{} )
 };
 
 /*
