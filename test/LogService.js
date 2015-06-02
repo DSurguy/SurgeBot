@@ -157,6 +157,7 @@ describe('Log.js', function(){
 
 		});
 	});
+
 	describe('Log.addToLogFileQueue', function(){
 		it( 'Should add a message to the queue object', function(){
 			var newLog = new Log();
@@ -230,14 +231,15 @@ describe('Log.js', function(){
 			fs.appendFile.callsArgWith(2, testError);
 
 			sinon.stub(process, 'exit');
-			sinon.stub(console, 'log');
+			var consoleStub = sinon.stub(console, 'log');
 
 			newLog.logFile.queue.push('Test');
 			newLog.processLogFileQueue();
 
 			expect(console.log.calledWith(testError.stack));
 			expect(process.exit.calledOnce);
-			
+
+			consoleStub.restore();
 			process.exit.restore();
 		});
 	});
