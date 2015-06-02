@@ -3,5 +3,13 @@ var gulp = require('gulp'),
 
 gulp.task('test', function(){
 	gulp.src('./test/*.js')
-		.pipe(mocha());
+		.pipe(mocha({
+			reporter: 'spec'
+		}))
+		.once('error', function () {
+            process.exit(1);
+        })
+        .once('end', function () {
+            process.exit();
+        });
 });

@@ -6,12 +6,17 @@ module.exports = Log;
 function Log(logConfig){
 	//this.config = logConfig;
 	this.config = extend(true, {
-		logLevel: 2,
-		console: true,
+		logLevel: 1,
+		console: false,
 		logFile: false,
 		logFilePath: process.cwd()+'/log/botLog.log',
-		breakOnError: true
+		breakOnError: false
 	}, logConfig?logConfig:{} )
+
+	this.logFile = {
+		queue: [],
+		writing: false
+	};
 };
 
 /*
@@ -33,12 +38,12 @@ Log.prototype.log = function(message, level){
 };
 
 Log.prototype.error = function(error){
-	//format this message
-	var errMessage = (new Date()).toISOString()+" ERR: "+error.message;
-
+	if( typeof error == 'string' || typeof error == 'number' ){
+		error = new Error(error);
+	}
 	//attempt to log this to console
 	if( this.config.console && this.config.logLevel > 0 ){
-		console.trace(error);
+		console.log(error.stack);
 	}
 
 	//attempt to log to file
@@ -50,11 +55,6 @@ Log.prototype.error = function(error){
 	if( this.config.breakOnError ){
 		process.exit(1);
 	}
-};
-
-Log.prototype.logFile = {
-	queue: [],
-	writing: false
 };
 
 Log.prototype.addToLogFileQueue = function(message){
@@ -70,7 +70,7 @@ Log.prototype.processLogFileQueue = function(){
 			Log.logFile.writing = false;
 			//an error inside the log handler? Better just die.
 			if( err ){
-				console.log("Error while writing to log. " + err);
+				console.log("Error while writing to log. " + err.stack);
 				process.exit(1);
 			}
 			else{
