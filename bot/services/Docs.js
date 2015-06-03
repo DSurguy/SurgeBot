@@ -1,14 +1,16 @@
 module.exports = Docs;
-function Docs(){};
-
-Docs.prototype._list = {
-    commands: [],
-    passives: [],
-    services: []
+function Docs(){
+    this._list = {
+        commands: [],
+        passives: [],
+        services: [],
+        middleware: []
+    };
+    this._commands = {};
+    this._passives = {};
+    this._services = {};
+    this._middleware = {};
 };
-Docs.prototype._commands = {};
-Docs.prototype._passives = {};
-Docs.prototype._services = {};
 
 Docs.prototype.addCommandDoc = function(cmd, doc){
     this._commands[cmd] = doc;
