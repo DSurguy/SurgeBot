@@ -154,32 +154,17 @@ SurgeBot.prototype.service = function(label, constructor, config){
 	}
 
 	//attempt to add a doc to help if available.
-	//execute the command's doc function if available
-	if( typeof bot.services[label].doc == "function" ){
-		//add the doc if it returns an array of strings.
-		var docResult = bot.services[label].doc();
-		if( docResult.constructor.name == 'Array' ){
-			var allStrings = true;
-			for( var i=0; i<docResult.length; i++ ){
-				if( typeof docResult[i] !== 'string' ){
-					allStrings = false;
-					break;
-				}
-			}
-			if( allStrings ){
-				//this doc is formatted correctly, add it!
-				bot.services['Docs'].addServiceDoc(label, docResult);
-			}
-			else{
-				bot.services['Log'].error(new Error('Service \''+label+'\' attempted to add a doc, but the doc array was not entirely strings.'));
-			}
+	try{
+		if( typeof bot.services[label].doc == 'function' ){
+			//the doc is a function, run it and add the result
+			bot.services['Docs'].addDoc('service', label, bot.services[label].doc());
 		}
-		else{
-			bot.services['Log'].error(new Error('Service \''+label+'\' attempted to add a doc, but did not return an array from the doc function.'));
+		else if( typeof bot.services[label].doc == 'object' ){
+			//this is just an object of some sort, try to add the doc
+			bot.services['Docs'].addDoc('service', label, bot.services[label].doc);
 		}
-	}
-	else if( bot.services[label].doc ){
-		bot.services['Log'].error(new Error('Service \''+label+'\' attempted to add a doc, but did not provide a doc function.'));
+	} catch (e){
+		bot.services['Log'].error(e);
 	}
 };
 
@@ -206,32 +191,17 @@ SurgeBot.prototype.command = function(trigger, constructor, config){
 	bot.services['Log'].log('Successfully bound command: '+trigger, 2);
 
 	//attempt to add a doc to help if available.
-	//execute the command's doc function if available
-	if( typeof bot.commands[trigger].doc == "function" ){
-		//add the doc if it returns an array of strings.
-		var docResult = bot.commands[trigger].doc();
-		if( docResult.constructor.name == 'Array' ){
-			var allStrings = true;
-			for( var i=0; i<docResult.length; i++ ){
-				if( typeof docResult[i] !== 'string' ){
-					allStrings = false;
-					break;
-				}
-			}
-			if( allStrings ){
-				//this doc is formatted correctly, add it!
-				bot.services['Docs'].addCommandDoc(trigger, docResult);
-			}
-			else{
-				bot.services['Log'].error(new Error('Command \''+trigger+'\' attempted to add a doc, but the doc array was not entirely strings.'));
-			}
+	try{
+		if( typeof bot.commands[trigger].doc == 'function' ){
+			//the doc is a function, run it and add the result
+			bot.services['Docs'].addDoc('command', trigger, bot.commands[trigger].doc());
 		}
-		else{
-			bot.services['Log'].error(new Error('Command \''+trigger+'\' attempted to add a doc, but did not return an array from the doc function.'));
+		else if( typeof bot.commands[trigger].doc == 'object' ){
+			//this is just an object of some sort, try to add the doc
+			bot.services['Docs'].addDoc('command', trigger, bot.commands[trigger].doc);
 		}
-	}
-	else if( bot.commands[trigger].doc ){
-		bot.services['Log'].error(new Error('Command \''+trigger+'\' attempted to add a doc, but did not provide a doc function.'));
+	} catch (e){
+		bot.services['Log'].error(e);
 	}
 };
 
@@ -259,32 +229,17 @@ SurgeBot.prototype.passive = function(label, constructor, config){
 	bot.services['Log'].log('Successfully bound passive handler: '+label, 2);
 
 	//attempt to add a doc to help if available.
-	//execute the command's doc function if available
-	if( typeof bot.passives[label].doc == "function" ){
-		//add the doc if it returns an array of strings.
-		var docResult = bot.passives[label].doc();
-		if( docResult.constructor.name == 'Array' ){
-			var allStrings = true;
-			for( var i=0; i<docResult.length; i++ ){
-				if( typeof docResult[i] !== 'string' ){
-					allStrings = false;
-					break;
-				}
-			}
-			if( allStrings ){
-				//this doc is formatted correctly, add it!
-				bot.services['Docs'].addPassiveDoc(label, docResult);
-			}
-			else{
-				bot.services['Log'].error(new Error('Passive handler \''+label+'\' attempted to add a doc, but the doc array was not entirely strings.'));
-			}
+	try{
+		if( typeof bot.passives[label].doc == 'function' ){
+			//the doc is a function, run it and add the result
+			bot.services['Docs'].addDoc('passive', label, bot.passives[label].doc());
 		}
-		else{
-			bot.services['Log'].error(new Error('Passive handler \''+label+'\' attempted to add a doc, but did not return an array from the doc function.'));
+		else if( typeof bot.passives[label].doc == 'object' ){
+			//this is just an object of some sort, try to add the doc
+			bot.services['Docs'].addDoc('passive', label, bot.passives[label].doc);
 		}
-	}
-	else if( bot.passives[label].doc ){
-		bot.services['Log'].error(new Error('Passive handler \''+label+'\' attempted to add a doc, but did not provide a doc function.'));
+	} catch (e){
+		bot.services['Log'].error(e);
 	}
 };
 
@@ -309,31 +264,16 @@ SurgeBot.prototype.middleware = function(label, constructor, config){
 	bot.services['Log'].log('Successfully bound middleware: '+label, 2);
 
 	//attempt to add a doc to help if available.
-	//execute the command's doc function if available
-	if( typeof newMiddle.doc == "function" ){
-		//add the doc if it returns an array of strings.
-		var docResult = newMiddle.doc();
-		if( docResult.constructor.name == 'Array' ){
-			var allStrings = true;
-			for( var i=0; i<docResult.length; i++ ){
-				if( typeof docResult[i] !== 'string' ){
-					allStrings = false;
-					break;
-				}
-			}
-			if( allStrings ){
-				//this doc is formatted correctly, add it!
-				bot.services['Docs'].addMiddlewareDoc(label, docResult);
-			}
-			else{
-				bot.services['Log'].error(new Error('Middleware \''+label+'\' attempted to add a doc, but the doc array was not entirely strings.'));
-			}
+	try{
+		if( typeof newMiddle.doc == 'function' ){
+			//the doc is a function, run it and add the result
+			bot.services['Docs'].addDoc('middleware', label, newMiddle.doc());
 		}
-		else{
-			bot.services['Log'].error(new Error('Middleware \''+label+'\' attempted to add a doc, but did not return an array from the doc function.'));
+		else if( typeof newMiddle.doc == 'object' ){
+			//this is just an object of some sort, try to add the doc
+			bot.services['Docs'].addDoc('middleware', label, newMiddle.doc);
 		}
-	}
-	else if( newMiddle.doc ){
-		bot.services['Log'].error(new Error('Middleware \''+label+'\' attempted to add a doc, but did not provide a doc function.'));
+	} catch (e){
+		bot.services['Log'].error(e);
 	}
 };
