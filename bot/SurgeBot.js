@@ -46,7 +46,6 @@ SurgeBot.prototype.listen = function(){
 			}
 			else{
 				Q.when( middlewares[index].handler(messageData) ).then( function(){
-					services['Log'].log('Ran some middleware at index: '+index+', continuing',4);
 					if( index == middlewares.length-1 ){
 						complete(messageData);
 					}
@@ -60,9 +59,19 @@ SurgeBot.prototype.listen = function(){
 		})(messageData, bot.middlewares, bot.services, 0, function (messageData){
 
 			//check for a no-conflict mode command
-		    if( bot.config.irc.noConflictMode && message.search(new RegExp('^\\!'+bot.services['IrcSession'].nick+'\\s+[a-zA-Z0-9]+','g') ) == 0){
+			var noConfRegex,
+				noConfName;
+			if( bot.config.irc.noConflictShorthand ){
+				noConfRegex = new RegExp('^\\!(?:'+bot.services['IrcSession'].nick+'|'+bot.config.irc.noConflictShorthand+')\\s+[a-zA-Z0-9]+','g');
+				noConfName = new RegExp('^\\!(?:'+bot.services['IrcSession'].nick+'|'+bot.config.irc.noConflictShorthand+')\\s');
+			}
+			else{
+				noConfRegex = new RegExp('^\\!'+bot.services['IrcSession'].nick+'\\s+[a-zA-Z0-9]+','g');
+				noConfName = new RegExp('^\\!'+bot.services['IrcSession'].nick+'\\s');
+			}
+		    if( bot.config.irc.noConflictMode && message.search( noConfRegex ) == 0){
 		    	//remove the bot name, space and leading command ! from message
-		    	message = message.slice( ('!'+bot.services['IrcSession'].nick).length+1 );
+		    	message = message.split( noConfName )[1];
 		    	//determine which command has been sent
 		    	var cmdEnd = message.indexOf(" ") !== -1 ? message.indexOf(" ") : message.length;
 		    	var command = message.slice(0, cmdEnd);

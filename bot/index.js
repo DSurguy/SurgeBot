@@ -21,8 +21,8 @@ myBot.service('User', User, {
 	mongo: Config.mongo
 });
 
-myBot.middleware('MiddleTest', MiddleTest);
-myBot.middleware('MiddleTest2', MiddleTest);
+/*myBot.middleware('MiddleTest', MiddleTest);
+myBot.middleware('MiddleTest2', MiddleTest);*/
 
 myBot.passive('YouTube', YouTube, {
 	googleApi: Config.googleApi

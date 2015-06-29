@@ -30,7 +30,8 @@ if( secret.irc ){
         nick: secret.irc.nick ? secret.irc.nick : 'SurgeBot',
         channels: secret.irc.channels ? secret.irc.channels : ['#SurgeBot'],
         breakOnPassive: secret.irc.breakOnPassive ? secret.irc.breakOnPassive : true,
-        noConflictMode: secret.irc.noConflictMode ? secret.irc.noConflictMode : true
+        noConflictMode: secret.irc.noConflictMode ? secret.irc.noConflictMode : true,
+        noConflictShorthand: secret.irc.noConflictShorthand ? secret.irc.noConflictShorthand : undefined
     }
 }
 else{
@@ -40,7 +41,8 @@ else{
         nick: '['+String.fromCharCode(96+Date.now()%10) + ']SurgeBot',
         channels: ['#SurgeBot'],
         breakOnPassive: true,
-        noConflictMode: true
+        noConflictMode: true,
+        noConflictShorthand: undefined
     };
 }
 
