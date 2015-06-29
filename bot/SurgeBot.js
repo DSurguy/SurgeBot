@@ -39,14 +39,12 @@ SurgeBot.prototype.listen = function(){
 			message: message,
 			rawData: rawData
 		};
-		bot.services['Log'].log('Starting middleware.',4);
 		(function runMiddle(messageData, middlewares, services, index, complete){
 			if( middlewares.length == 0 ){
 				complete(messageData);
 			}
 			else{
 				Q.when( middlewares[index].handler(messageData) ).then( function(){
-					services['Log'].log('Ran some middleware at index: '+index+', continuing',4);
 					if( index == middlewares.length-1 ){
 						complete(messageData);
 					}
