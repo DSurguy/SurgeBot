@@ -32,6 +32,9 @@ myBot.command('auth', Auth, {
 	services: ['User'],
 	irc: Config.irc
 });
-myBot.command('roll', Roll);
+myBot.command('roll', Roll, {
+	dieNumLimit: 100,
+	dieSizeLimit: 100
+});
 
 myBot.listen();

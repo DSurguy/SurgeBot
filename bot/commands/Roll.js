@@ -1,7 +1,20 @@
+var extend = require('extend');
+
 module.exports = Roll;
 function Roll(client, services, config){
 	this.client = client;
 	this.services = services;
+	this.config = extend(true, {
+		dieNumLimit: 100,
+		dieSizeLimit: 100
+	},config);
+
+	this._const = {
+		e: {
+			dieLimit: 0,
+			badDie: 1
+		}
+	};
 };
 
 Roll.prototype.handler = function(from, to, params, raw){
@@ -10,74 +23,168 @@ Roll.prototype.handler = function(from, to, params, raw){
 		target = to;
 
 	var args = {
-		die: parseInt(argArray[0]? argArray[0] : ""),
-		min: parseInt(argArray[0]? argArray[0] : ""),
-		max: parseInt(argArray[1]? argArray[1] : ""),
+		die: (/^\d+(?:d\d+)?$/g).test(argArray[0]) ? argArray[0] : undefined,
+		min: (/^\d+(?:d\d+)?$/g).test(argArray[0]) ? argArray[0] : undefined,
+		max: (/^\d+(?:d\d+)?$/g).test(argArray[1]) ? argArray[1] : undefined,
 		mult: (function (multArgs){
 			for( var i=1; i<multArgs.length; i++ ){
-				if( multArgs[i] == "-m" && multArgs[i+1] ){
-					return parseInt(multArgs[i+1]);
+				if( multArgs[i] == "-m" && (/^\d+(?:d\d+)?$/g).test(multArgs[i+1]) ){
+					return multArgs[i+1];
 				}
-				else if( multArgs[i] == "-m" ){
-					return NaN;
+			}
+			return undefined;
+		})(argArray),
+		plus: (function (multArgs){
+			var isPlus = /^\+\d+(?:d\d+)?$/g
+			for( var i=1; i<multArgs.length; i++ ){
+				if( isPlus.test(multArgs[i]) ){
+					return multArgs[i].slice(1);
+				}
+			}
+			return undefined;
+		})(argArray),
+		minus: (function (multArgs){
+			var isMinus = /^\-\d+(?:d\d+)?$/g
+			for( var i=1; i<multArgs.length; i++ ){
+				if( isMinus.test(multArgs[i]) ){
+					return multArgs[i].slice(1);
 				}
 			}
 			return undefined;
 		})(argArray)
 	};
 
-	switch(argArray.length){
-		case 4:
-			//assume !roll min max -m mult
-			if( isNaN(args.min) || isNaN(args.max) || isNaN(args.mult) ){
-				Roll.client.say(to, 'Malformed !roll. '
-					+'Expected !roll <min> <max> -m <multiplier>, '
-					+'got !roll <'+argArray[0]+'> <'+argArray[1]+'> <'+argArray[2]+'> <'+argArray[3]+'>. See \'!help roll\' for more information.');
-			}
-			else{
-				Roll.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min)*args.mult);
-			}
-		break;
+	var dieRoll = 0;
 
-		case 3:
-			//assume !roll die -m mult
-			if( isNaN(args.die) || isNaN(args.mult) ){
-				Roll.client.say(to, 'Malformed !roll. '
-					+'Expected !roll <die> -m <multiplier>, '
-					+'got !roll <'+argArray[0]+'> <'+argArray[1]+'> <'+argArray[2]+'>. See \'!help roll\' for more information.');
-			}
-			else{
-				Roll.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1)*args.mult);
-			}
-		break;
-	
-		case 2:
-			//assume !roll min max
-			if( isNaN(args.min) || isNaN(args.max) ){
-				Roll.client.say(to, 'Malformed !roll. '
-					+'Expected !roll <min> <max>, '
-					+'got !roll <'+argArray[0]+'> <'+argArray[1]+'>. See \'!help roll\' for more information.');
-			}
-			else{
-				Roll.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.max - args.min)) + args.min) );
-			}
-		break;
+	//make sure to catch unparsed dies
+	try{
+		if( args.min && args.max ){
+			dieRoll = this._parseDiceRoll(args.min, args.max)
+		}
+		else if( args.die ){
+			dieRoll = this._parseDiceRoll(args.die);
+		}
+		else{
+			//malformed roll
+			Roll.client.say(to, 'Malformed !roll. '
+				+'Expected !roll <die|min> <max>, '
+				+'got !roll <'+argArray[0]+'> <'+argArray[1]+'>. See \'!help roll\' for more information.');
+			return;
+		}
+	} catch (e){
+		if( e.code == this._const.e.dieLimit ){
+			Roll.client.say(to, 'Malformed !roll. '
+				+'Die of '+e.die+' exceeds die limit of '+this.config.dieNumLimit+'d'+this.config.dieSizeLimit+'.');
+		}
+		else if( e.code == this._const.e.badDie ){
+			Roll.client.say(to, 'Malformed !roll. '
+				+'Die of '+e.die+' could not be parsed.');
+		}
+	}
 
-		case 1:
-			//assume !roll die
-			if( isNaN(args.die) ){
-				Roll.client.say(to, 'Malformed !roll. '
-					+'Expected !roll <die>, '
-					+'got !roll <'+argArray[0]+'>. See \'!help roll\' for more information.');
+	//apply modifiers
+	if( args.mult ){
+		if( (/^\d+d\d+$/g).test(args.mult) ){
+			dieRoll *= this._parseDiceRoll(args.mult);	
+		}
+		else{
+			dieRoll *= parseInt(args.mult);
+		}
+	}
+
+	if( args.plus ){
+		if( (/^\d+d\d+$/g).test(args.plus) ){
+			dieRoll += this._parseDiceRoll(args.plus);	
+		}
+		else{
+			dieRoll += parseInt(args.plus);
+		}
+	}
+
+	if( args.minus ){
+		if( (/^\d+d\d+$/g).test(args.minus) ){
+			dieRoll -= this._parseDiceRoll(args.minus);	
+		}
+		else{
+			dieRoll -= parseInt(args.minus);
+		}
+	}
+
+	//report the results
+	Roll.client.say(to, from+" rolls a\x0306 "+dieRoll );
+};
+
+Roll.prototype._parseDiceRoll = function(die, die2){
+	//determine if this is a multi-die roll
+	var dieVal1 = 0,
+		dieVal2 = 0;
+	if( (/^\d+d\d+$/g).test(die) ){
+		//multi-die!
+		var dieSplit = die.split('d');
+		//check to see if the passed die exceeds the limits in config
+		if( parseInt(dieSplit[0]) > this.config.dieNumLimit || parseInt(dieSplit[0]) > this.config.dieSizeLimit ){
+			throw new Error({
+				code: this._const.e.dieLimit,
+				die: die
+			});
+		}
+		if( parseInt(dieSplit[0]) == 1 ){
+			dieVal1 = parseInt(dieSplit[1]);
+		}
+		else{
+			for( var i=0; i<parseInt(dieSplit[0]); i++ ){
+				dieVal1 += Math.floor(Math.random() * (parseInt(dieSplit[1]))) + 1;
 			}
-			else{
-				Roll.client.say(to, from+" rolls a\x0306 "+(Math.floor(Math.random() * (args.die - 1)) + 1) );
+		}
+	}
+	else if( (/^\d+$/g).test(die) ){
+		dieVal1 = parseInt(die);
+	}
+	else{
+		//malformed die somehow
+		throw new Error({
+			code: this._const.e.badDie,
+			die: die
+		});
+	}
+
+	if( die2 && (/^\d+d\d+$/g).test(die2) ){
+		//multi-die!
+		var dieSplit = die2.split('d');
+		//check to see if the passed die exceeds the limits in config
+		if( parseInt(dieSplit[0]) > this.config.dieNumLimit || parseInt(dieSplit[0]) > this.config.dieSizeLimit ){
+			throw new Error({
+				code: this._const.e.dieLimit,
+				die: die2
+			});
+		}
+		if( parseInt(dieSplit[0]) == 1 ){
+			dieVal2 = parseInt(dieSplit[1]);
+		}
+		else{
+			for( var i=0; i<parseInt(dieSplit[0]); i++ ){
+				dieVal2 += Math.floor(Math.random() * (parseInt(dieSplit[1]))) + 1;
 			}
-		break;
-		
-		default:
-			Roll.client.say(to, 'Malformed !roll. See \'!help roll\' for more information.');
-		break;
+		}
+	}
+	else if( die2 &&(/^\d+$/g).test(die2) ){
+		dieVal2 = parseInt(die2);
+	}
+	else if( die2 ) {
+		//malformed die somehow
+		throw new Error({
+			code: this._const.e.badDie,
+			die: die2
+		});
+	}
+
+	console.log(dieVal1, dieVal2, arguments);
+
+	if( dieVal2 ){
+		return Math.floor( Math.random() * (dieVal2 - dieVal1 + 1)) + dieVal1;
+	}
+	else {
+		return Math.floor( Math.random() * (dieVal1)) + 1;
 	}
 };
 
